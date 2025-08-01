@@ -39,6 +39,7 @@ input int ATRPeriod = 14;                         // ATR Period
 input int Shift = 1;                              // Shift In The ATR Value (1=Previous Candle)
 input double ATRMultiplier = 1.0;                 // ATR Multiplier
 input int ProfitThreshold = 50;                   // Profit Threshold (in points)
+input int MinSLChangePoints = 10;                 // Min SL Change Points Threshold
 input string Comment_2 = "====================";  // Orders Filtering Options
 input bool OnlyCurrentSymbol = true;              // Apply To Current Symbol Only
 input ENUM_CONSIDER OnlyType = All;               // Apply To
@@ -202,7 +203,8 @@ void TrailingStop()
             {
                 NewSL = NormalizeDouble(SLBuy, eDigits);
                 NewTP = TPPrice;
-                if (NewSL > SLPrice)
+                double SLChangePoints = MathAbs(NewSL - SLPrice) / MarketInfo(Instrument, MODE_POINT);
+                if (NewSL > SLPrice && SLChangePoints >= MinSLChangePoints)
                 {
                     ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
                 }
@@ -223,7 +225,8 @@ void TrailingStop()
             {
                 NewSL = NormalizeDouble(SLSell + Spread, eDigits);
                 NewTP = TPPrice;
-                if (NewSL < SLPrice)
+                double SLChangePoints = MathAbs(SLPrice - NewSL) / MarketInfo(Instrument, MODE_POINT);
+                if (NewSL < SLPrice && SLChangePoints >= MinSLChangePoints)
                 {
                     ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
                 }
