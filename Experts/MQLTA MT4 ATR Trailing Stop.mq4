@@ -203,7 +203,7 @@ void TrailingStop()
             {
                 NewSL = NormalizeDouble(SLBuy, eDigits);
                 NewTP = TPPrice;
-                double SLChangePoints = MathAbs(NewSL - SLPrice) / MarketInfo(Instrument, MODE_POINT);
+                double SLChangePoints = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
                 if (NewSL > SLPrice && SLChangePoints >= MinSLChangePoints)
                 {
                     ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
@@ -225,7 +225,7 @@ void TrailingStop()
             {
                 NewSL = NormalizeDouble(SLSell + Spread, eDigits);
                 NewTP = TPPrice;
-                double SLChangePoints = MathAbs(SLPrice - NewSL) / MarketInfo(Instrument, MODE_POINT);
+                double SLChangePoints = MathAbs(SLPrice - NewSL) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
                 if (NewSL < SLPrice && SLChangePoints >= MinSLChangePoints)
                 {
                     ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
