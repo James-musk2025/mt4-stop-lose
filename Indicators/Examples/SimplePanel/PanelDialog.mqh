@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                                  PanelDialog.mqh |
-//|                             Copyright 2000-2025, MetaQuotes Ltd. |
+//|                   Copyright 2009-2015, MetaQuotes Software Corp. |
 //|                                              http://www.mql5.com |
 //+------------------------------------------------------------------+
 #include <Controls\Dialog.mqh>

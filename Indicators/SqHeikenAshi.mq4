@@ -52,10 +52,12 @@ void OnInit(void)
    SetIndexLabel(1,"High/Low");
    SetIndexLabel(2,"Open");
    SetIndexLabel(3,"Close");
+   /*
    SetIndexDrawBegin(0,10);
    SetIndexDrawBegin(1,10);
    SetIndexDrawBegin(2,10);
    SetIndexDrawBegin(3,10);
+   */
 //--- indicator buffers mapping
    SetIndexBuffer(0,ExtLowHighBuffer);
    SetIndexBuffer(1,ExtHighLowBuffer);

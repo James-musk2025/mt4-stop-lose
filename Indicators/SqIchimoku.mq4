@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
-//|                                                     Ichimoku.mq4 |
-//|                   Copyright 2005-2014, MetaQuotes Software Corp. |
-//|                                              http://www.mql4.com |
+//|                                                   SqIchimoku.mq4 |
+//|                           Copyright © 2017, StrategyQuant s.r.o. |
+//|                                     http://www.strategyquant.com |
 //+------------------------------------------------------------------+
-#property copyright   "2005-2014, MetaQuotes Software Corp."
-#property link        "http://www.mql4.com"
+#property copyright   "Copyright © 2017, StrategyQuant s.r.o."
+#property link        "http://www.strategyquant.com"
 #property description "Ichimoku Kinko Hyo"
 #property strict
 
@@ -40,12 +40,12 @@ void OnInit(void)
 //---
    SetIndexStyle(0,DRAW_LINE);
    SetIndexBuffer(0,ExtTenkanBuffer);
-   SetIndexDrawBegin(0,InpTenkan-1);
+   //SetIndexDrawBegin(0,InpTenkan-1);
    SetIndexLabel(0,"Tenkan Sen");
 //---
    SetIndexStyle(1,DRAW_LINE);
    SetIndexBuffer(1,ExtKijunBuffer);
-   SetIndexDrawBegin(1,InpKijun-1);
+   //SetIndexDrawBegin(1,InpKijun-1);
    SetIndexLabel(1,"Kijun Sen");
 //---
    ExtBegin=InpKijun;
@@ -54,8 +54,8 @@ void OnInit(void)
 //---
    SetIndexStyle(2,DRAW_HISTOGRAM,STYLE_DOT);
    SetIndexBuffer(2,ExtSpanA_Buffer);
-   SetIndexDrawBegin(2,InpKijun+ExtBegin-1);
-   SetIndexShift(2,InpKijun);
+   //SetIndexDrawBegin(2,InpKijun+ExtBegin-1);
+   //SetIndexShift(2,InpKijun);
    SetIndexLabel(2,NULL);
    SetIndexStyle(5,DRAW_LINE,STYLE_DOT);
    SetIndexBuffer(5,ExtSpanA2_Buffer);
@@ -65,8 +65,8 @@ void OnInit(void)
 //---
    SetIndexStyle(3,DRAW_HISTOGRAM,STYLE_DOT);
    SetIndexBuffer(3,ExtSpanB_Buffer);
-   SetIndexDrawBegin(3,InpKijun+InpSenkou-1);
-   SetIndexShift(3,InpKijun);
+   //SetIndexDrawBegin(3,InpKijun+InpSenkou-1);
+   //SetIndexShift(3,InpKijun);
    SetIndexLabel(3,NULL);
    SetIndexStyle(6,DRAW_LINE,STYLE_DOT);
    SetIndexBuffer(6,ExtSpanB2_Buffer);
@@ -76,7 +76,6 @@ void OnInit(void)
 //---
    SetIndexStyle(4,DRAW_LINE);
    SetIndexBuffer(4,ExtChikouBuffer);
-   SetIndexShift(4,-InpKijun);
    SetIndexLabel(4,"Chikou Span");
 //--- initialization done
   }
@@ -97,8 +96,7 @@ int OnCalculate(const int rates_total,
    int    i,k,pos;
    double high_value,low_value;
 //---
-   if(rates_total<=InpTenkan || rates_total<=InpKijun || rates_total<=InpSenkou)
-      return(0);
+ 
 //--- counting from 0 to rates_total
    ArraySetAsSeries(ExtTenkanBuffer,false);
    ArraySetAsSeries(ExtKijunBuffer,false);
@@ -112,96 +110,121 @@ int OnCalculate(const int rates_total,
    ArraySetAsSeries(low,false);
    ArraySetAsSeries(close,false);
 //--- initial zero
-   if(prev_calculated<1)
-     {
-      for(i=0; i<InpTenkan; i++)
-         ExtTenkanBuffer[i]=0.0;
-      for(i=0; i<InpKijun; i++)
-         ExtKijunBuffer[i]=0.0;
-      for(i=0; i<ExtBegin; i++)
-        {
-         ExtSpanA_Buffer[i]=0.0;
-         ExtSpanA2_Buffer[i]=0.0;
-        }
-      for(i=0; i<InpSenkou; i++)
-        {
-         ExtSpanB_Buffer[i]=0.0;
-         ExtSpanB2_Buffer[i]=0.0;
-        }
-     }
+  
 //--- Tenkan Sen
-   pos=InpTenkan-1;
-   if(prev_calculated>InpTenkan)
+   pos=0;
+   
+   if(prev_calculated>0)
       pos=prev_calculated-1;
+      
+   int chikouStart = rates_total > InpKijun ? rates_total - InpKijun : 0;
+   
+   for(int a=chikouStart; a<rates_total; a++){
+      ExtChikouBuffer[a]=close[rates_total-1];
+   }   
+      
    for(i=pos; i<rates_total; i++)
      {
       high_value=high[i];
       low_value=low[i];
-      k=i+1-InpTenkan;
-      while(k<=i)
-        {
-         if(high_value<high[k])
-            high_value=high[k];
-         if(low_value>low[k])
-            low_value=low[k];
-         k++;
-        }
+      
+      if(i >= InpTenkan){
+         k=i+1-InpTenkan;
+         
+         while(k<=i)
+           {
+            if(high_value<high[k])
+               high_value=high[k];
+            if(low_value>low[k])
+               low_value=low[k];
+            k++;
+           }
+      }
+         
       ExtTenkanBuffer[i]=(high_value+low_value)/2;
      }
 //--- Kijun Sen
-   pos=InpKijun-1;
-   if(prev_calculated>InpKijun)
+   pos=0;
+   if(prev_calculated>0)
       pos=prev_calculated-1;
+      
    for(i=pos; i<rates_total; i++)
      {
       high_value=high[i];
       low_value=low[i];
-      k=i+1-InpKijun;
-      while(k<=i)
-        {
-         if(high_value<high[k])
-            high_value=high[k];
-         if(low_value>low[k])
-            low_value=low[k];
-         k++;
-        }
-      ExtKijunBuffer[i]=(high_value+low_value)/2;
+      
+      if(i >= InpKijun){
+         k=i+1-InpKijun;
+         
+         while(k<=i)
+           {
+            if(high_value<high[k])
+               high_value=high[k];
+            if(low_value>low[k])
+               low_value=low[k];
+            k++;
+           }
+       }
+       
+       ExtKijunBuffer[i]=(high_value+low_value)/2;
      }
 //--- Senkou Span A
-   pos=ExtBegin-1;
-   if(prev_calculated>ExtBegin)
+   pos=0;
+   if(prev_calculated>0)
       pos=prev_calculated-1;
+      
    for(i=pos; i<rates_total; i++)
      {
       ExtSpanA_Buffer[i]=(ExtKijunBuffer[i]+ExtTenkanBuffer[i])/2;
       ExtSpanA2_Buffer[i]=ExtSpanA_Buffer[i];
      }
 //--- Senkou Span B
-   pos=InpSenkou-1;
-   if(prev_calculated>InpSenkou)
+   pos=0;
+   if(prev_calculated>0)
       pos=prev_calculated-1;
+      
    for(i=pos; i<rates_total; i++)
      {
       high_value=high[i];
       low_value=low[i];
-      k=i+1-InpSenkou;
-      while(k<=i)
-        {
-         if(high_value<high[k])
-            high_value=high[k];
-         if(low_value>low[k])
-            low_value=low[k];
-         k++;
-        }
+      
+      if(i >= InpSenkou){
+         k=i+1-InpSenkou;
+         
+         while(k<=i)
+           {
+            if(high_value<high[k])
+               high_value=high[k];
+            if(low_value>low[k])
+               low_value=low[k];
+            k++;
+           }
+      }
+      
       ExtSpanB_Buffer[i]=(high_value+low_value)/2;
       ExtSpanB2_Buffer[i]=ExtSpanB_Buffer[i];
+      
+      if(i >= InpSenkou && i >= InpKijun){
+         ExtSpanA_Buffer[i] = ExtSpanA2_Buffer[i - InpKijun]; 
+         ExtSpanB_Buffer[i] = ExtSpanB2_Buffer[i - InpKijun]; 
+      }
+      else {
+         ExtSpanA_Buffer[i] = (high_value+low_value)/2; 
+      }
      }
+  
 //--- Chikou Span
    pos=0;
+   
    if(prev_calculated>1)
       pos=prev_calculated-1;
-   for(i=pos; i<rates_total; i++)
-      ExtChikouBuffer[i]=close[i];
+   for(i=pos; i<rates_total; i++){
+      ExtChikouBuffer[i]=close[rates_total-1];
+      if(i >= InpKijun){
+         ExtChikouBuffer[i-InpKijun]=close[i];
+      }
+   }
+  
 //---
    return(rates_total);
   }
