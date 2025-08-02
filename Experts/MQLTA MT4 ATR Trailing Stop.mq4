@@ -47,6 +47,9 @@ input int MagicNumber = 0;                        // Magic Number (if above is t
 input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
 input bool EnableTrailingParam = false;           // Enable Trailing Stop
+input bool EnableBreakEvenParam = false;          // Enable Break Even
+input double ProfitPipsForBreakEven = 20;         // Pips Required for Break Even
+input bool ConsiderCommissionInBreakEven = true;  // Consider Commission in Break Even
 input string Comment_3 = "====================";  // Notification Options
 input bool EnableNotify = false;                  // Enable Notifications feature
 input bool SendAlert = true;                      // Send Alert Notification
@@ -60,12 +63,14 @@ input int Yoff = 20;                              // Vertical spacing for the co
 
 int OrderOpRetry = 5;
 bool EnableTrailing = EnableTrailingParam;
+bool EnableBreakEven = EnableBreakEvenParam;
 double DPIScale; // Scaling parameter for the panel based on the screen DPI.
 int PanelMovX, PanelMovY, PanelLabX, PanelLabY, PanelRecX;
 
 int OnInit()
 {
     EnableTrailing = EnableTrailingParam;
+    EnableBreakEven = EnableBreakEvenParam;
 
     DPIScale = (double)TerminalInfoInteger(TERMINAL_SCREEN_DPI) / 96.0;
 
@@ -88,7 +93,7 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
-    if (EnableTrailing)
+    if (EnableTrailing || EnableBreakEven) // 检查是否启用了任一功能
         TrailingStop();
     if (ShowPanel)
         DrawPanel();
@@ -104,6 +109,10 @@ void OnChartEvent(const int id,
         if (sparam == PanelEnableDisable)
         {
             ChangeTrailingEnabled();
+        }
+        else if (sparam == PanelBreakEven)
+        {
+            ChangeBreakEvenEnabled();
         }
     }
     else if (id == CHARTEVENT_KEYDOWN)
@@ -176,26 +185,86 @@ void TrailingStop()
             SLBuy = NormalizeDouble(MathRound(SLBuy / TickSize) * TickSize, eDigits);
             SLSell = NormalizeDouble(MathRound(SLSell / TickSize) * TickSize, eDigits);
         }
-        if ((OrderType() == OP_BUY) && (SLBuy < MarketInfo(Instrument, MODE_BID) - StopLevel))
+        double openPrice = OrderOpenPrice();
+
+        // Check Break Even condition first
+        if (CheckBreakEvenCondition(OrderType(), openPrice, Instrument))
         {
-            NewSL = NormalizeDouble(SLBuy, eDigits);
-            NewTP = TPPrice;
-            double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-            // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
-            if ((SLPrice == 0) || ((NewSL > SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
+            double bePrice = GetBreakEvenPrice(OrderType(), openPrice, Instrument);
+            // 对保本价进行Tick Size的规范化处理
+            if (TickSize > 0)
             {
-                ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
+                bePrice = NormalizeDouble(MathRound(bePrice / TickSize) * TickSize, eDigits);
+            }
+
+            // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": Break Even Price=", bePrice);
+            double minStopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
+            bool validStopDistance = true;
+
+            // 验证止损价格是否符合最小距离要求
+            if (OrderType() == OP_BUY)
+            {
+                double currentBid = MarketInfo(Instrument, MODE_BID);
+                validStopDistance = (bePrice <= currentBid - minStopLevel);
+                // 买单的止损价不能高于当前Bid价
+                if (bePrice > currentBid)
+                {
+                    Print("WARNING - Break even price ", bePrice, " is higher than current Bid price ", currentBid);
+                    continue;
+                }
+            }
+            else if (OrderType() == OP_SELL)
+            {
+                double currentAsk = MarketInfo(Instrument, MODE_ASK);
+                validStopDistance = (bePrice >= currentAsk + minStopLevel);
+                // 卖单的止损价不能低于当前Ask价
+                if (bePrice < currentAsk)
+                {
+                    Print("WARNING - Break even price ", bePrice, " is lower than current Ask price ", currentAsk);
+                    continue;
+                }
+            }
+
+            // 验证是否需要移动止损
+            bool needToModify = (SLPrice == 0) ||
+                                (OrderType() == OP_BUY && bePrice > SLPrice) ||
+                                (OrderType() == OP_SELL && bePrice < SLPrice);
+
+            if (bePrice != 0 && validStopDistance && needToModify)
+            {
+                ModifyOrder(OrderTicket(), openPrice, bePrice, TPPrice);
+                continue;
+            }
+            else if (!validStopDistance)
+            {
+                Print("WARNING - Break even price ", bePrice, " is too close to current price. Minimum distance required: ", minStopLevel);
             }
         }
-        else if ((OrderType() == OP_SELL) && (SLSell > MarketInfo(Instrument, MODE_ASK) + StopLevel))
+
+        // Regular trailing stop logic
+        if (EnableTrailing)
         {
-            NewSL = NormalizeDouble(SLSell + Spread, eDigits);
-            NewTP = TPPrice;
-            double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-            // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
-            if ((SLPrice == 0) || ((NewSL < SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
+            if ((OrderType() == OP_BUY) && (SLBuy < MarketInfo(Instrument, MODE_BID) - StopLevel))
             {
-                ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
+                NewSL = NormalizeDouble(SLBuy, eDigits);
+                NewTP = TPPrice;
+                double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
+                // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
+                if ((SLPrice == 0) || ((NewSL > SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
+                {
+                    ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
+                }
+            }
+            else if ((OrderType() == OP_SELL) && (SLSell > MarketInfo(Instrument, MODE_ASK) + StopLevel))
+            {
+                NewSL = NormalizeDouble(SLSell + Spread, eDigits);
+                NewTP = TPPrice;
+                double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
+                // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
+                if ((SLPrice == 0) || ((NewSL < SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
+                {
+                    ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
+                }
             }
         }
     }
@@ -263,6 +332,7 @@ void NotifyStopLossUpdate(int OrderNumber, double SLPrice, string symbol)
 string PanelBase = ExpertName + "-P-BAS";
 string PanelLabel = ExpertName + "-P-LAB";
 string PanelEnableDisable = ExpertName + "-P-ENADIS";
+string PanelBreakEven = ExpertName + "-P-BEVEN";
 void DrawPanel()
 {
     string PanelText = "MQLTA ATRTS";
@@ -333,6 +403,40 @@ void DrawPanel()
 
     Rows++;
 
+    string BreakEvenText = "";
+    color BreakEvenColor = clrNavy;
+    color BreakEvenBack = clrKhaki;
+    if (EnableBreakEven)
+    {
+        BreakEvenText = "BREAK EVEN ENABLED";
+        BreakEvenColor = clrWhite;
+        BreakEvenBack = clrDarkGreen;
+    }
+    else
+    {
+        BreakEvenText = "BREAK EVEN DISABLED";
+        BreakEvenColor = clrWhite;
+        BreakEvenBack = clrDarkRed;
+    }
+
+    DrawEdit(PanelBreakEven,
+             Xoff + 2,
+             Yoff + (PanelMovY + 1) * Rows + 2,
+             PanelLabX,
+             PanelLabY,
+             true,
+             8,
+             "Click to Enable or Disable the Break Even Feature",
+             ALIGN_CENTER,
+             "Consolas",
+             BreakEvenText,
+             false,
+             BreakEvenColor,
+             BreakEvenBack,
+             clrBlack);
+
+    Rows++;
+
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
 
@@ -355,5 +459,99 @@ void ChangeTrailingEnabled()
     else
         EnableTrailing = false;
     DrawPanel();
+}
+
+void ChangeBreakEvenEnabled()
+{
+    if (EnableBreakEven == false)
+    {
+        if (IsTradeAllowed())
+            EnableBreakEven = true;
+        else
+        {
+            MessageBox("You need to first enable Live Trading in the EA options.", "WARNING", MB_OK);
+        }
+    }
+    else
+        EnableBreakEven = false;
+    DrawPanel();
+}
+
+double GetBreakEvenPrice(int type, double openPrice, string symbol)
+{
+    double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0;                        // 佣金
+    double lots = OrderLots();                                                                        // 交易量
+    double point = MarketInfo(symbol, MODE_POINT);                                                    // 点值
+    double spread = MarketInfo(symbol, MODE_SPREAD) * point;                                          // 点差
+    double commissionPoints = ConsiderCommissionInBreakEven ? MathAbs(commission / lots) / point : 0; // 将佣金转换为点数
+
+    // 计算保本价格
+    double bePrice = openPrice; // 默认保本价为开仓价
+    if (type == OP_BUY)
+    {
+        // 买入订单的保本价 = 开仓价 + 佣金对应的点数（换算为价格）
+        bePrice = openPrice + commissionPoints * point + spread;
+    }
+    else if (type == OP_SELL)
+    {
+        // 卖出订单的保本价 = 开仓价 - 佣金对应的点数（换算为价格）
+        bePrice = openPrice - commissionPoints * point - spread;
+    }
+
+    Print("DEBUG - Order ", OrderTicket(), " in ", symbol,
+          ": Type=", (type == OP_BUY ? "BUY" : "SELL"),
+          " Open Price=", openPrice,
+          " Commission=", commission,
+          " Commission Per Lot=", commission / lots,
+          " Spread=", spread,
+          " Break Even Price=", bePrice);
+
+    return bePrice;
+}
+
+bool CheckBreakEvenCondition(int type, double openPrice, string symbol)
+{
+    if (!EnableBreakEven)
+        return false;
+
+    double bid = MarketInfo(symbol, MODE_BID);
+    double ask = MarketInfo(symbol, MODE_ASK);
+    double point = MarketInfo(symbol, MODE_POINT);                             // 一个点的值
+    double spread = MarketInfo(symbol, MODE_SPREAD) * point;                   // 点差
+    double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0; // 根据设置决定是否考虑佣金
+    double lots = OrderLots();
+
+    // 计算实际盈亏点数
+    double profitInPoints;
+    if (type == OP_BUY)
+    {
+        // 买单：使用 Bid 价计算盈亏点数（Bid 价已经考虑了点差）
+        profitInPoints = (bid - openPrice) / point;
+        // 如果考虑佣金，从盈利点数中减去佣金对应的点数
+        if (ConsiderCommissionInBreakEven)
+            profitInPoints -= MathAbs(commission / lots) / point;
+    }
+    else if (type == OP_SELL)
+    {
+        // 卖单：使用 Ask 价计算盈亏点数（Ask 价已经考虑了点差）
+        profitInPoints = (openPrice - ask) / point;
+        // 如果考虑佣金，从盈利点数中减去佣金对应的点数
+        if (ConsiderCommissionInBreakEven)
+            profitInPoints -= MathAbs(commission / lots) / point;
+    }
+    else
+        return false;
+
+    // Print("DEBUG - Order ", OrderTicket(), " in ", symbol,
+    //       ": Type=", (type == OP_BUY ? "BUY" : "SELL"),
+    //       " Open Price=", openPrice,
+    //       " Current Bid=", bid,
+    //       " Current Ask=", ask,
+    //       " Order Profit=", OrderProfit(),
+    //       " Commission Considered=", (ConsiderCommissionInBreakEven ? "Yes" : "No"),
+    //       " Profit Points=", profitInPoints,
+    //       " Required Points=", ProfitPipsForBreakEven);
+
+    return (profitInPoints >= ProfitPipsForBreakEven);
 }
 //+------------------------------------------------------------------+
