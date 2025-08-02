@@ -38,10 +38,6 @@ input string Comment_1 = "====================";  // Expert Advisor Settings
 input int ATRPeriod = 14;                         // ATR Period
 input int Shift = 1;                              // Shift In The ATR Value (1=Previous Candle)
 input double ATRMultiplier = 1.0;                 // ATR Multiplier
-input int MinSLChangePoints = 10;                 // Min SL Change Points Threshold
-input string Comment_4 = "====================";  // Profit Threshold Options
-input bool EnableProfitThreshold = false;         // Enable Profit Threshold
-input int ProfitThreshold = 300;                  // Profit Threshold (in points)
 input string Comment_2 = "====================";  // Orders Filtering Options
 input bool OnlyCurrentSymbol = true;              // Apply To Current Symbol Only
 input ENUM_CONSIDER OnlyType = All;               // Apply To
@@ -150,29 +146,6 @@ void TrailingStop()
         double NewSL = 0;
         double NewTP = 0;
         string Instrument = OrderSymbol();
-        
-        // Calculate current profit in points
-        double Spread = MarketInfo(Instrument, MODE_SPREAD) * MarketInfo(Instrument, MODE_POINT);
-        double ProfitPoints = (OrderType() == OP_BUY ?
-                             (MarketInfo(Instrument, MODE_BID) - OrderOpenPrice()) :
-                             (OrderOpenPrice() - MarketInfo(Instrument, MODE_ASK))) /
-                             MarketInfo(Instrument, MODE_POINT);
-        
-        // Skip if profit threshold is enabled and not reached
-        if (EnableProfitThreshold && ProfitPoints < ProfitThreshold) continue;
-        
-        // When ProfitThreshold is disabled, we still need to ensure the order has some profit
-        if (!EnableProfitThreshold && ProfitPoints <= 0) continue;
-        
-        // For disabled profit threshold, just ensure we're not at a loss
-        if (ProfitPoints <= 0) continue;
-        
-        // Calculate break-even SL (including spread)
-        double BreakEvenSL = (OrderType() == OP_BUY ?
-                            OrderOpenPrice() + Spread :
-                            OrderOpenPrice() - Spread);
-        
-        // Calculate ATR-based SL
         double SLBuy = GetStopLossBuy(Instrument);
         double SLSell = GetStopLossSell(Instrument);
         if ((SLBuy == 0) || (SLSell == 0))
@@ -186,6 +159,7 @@ void TrailingStop()
         SLSell = NormalizeDouble(SLSell, eDigits);
         double SLPrice = NormalizeDouble(OrderStopLoss(), eDigits);
         double TPPrice = NormalizeDouble(OrderTakeProfit(), eDigits);
+        double Spread = MarketInfo(Instrument, MODE_SPREAD) * MarketInfo(Instrument, MODE_POINT);
         double StopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
         // Adjust for tick size granularity.
         double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
@@ -193,51 +167,23 @@ void TrailingStop()
         {
             SLBuy = NormalizeDouble(MathRound(SLBuy / TickSize) * TickSize, eDigits);
             SLSell = NormalizeDouble(MathRound(SLSell / TickSize) * TickSize, eDigits);
-            BreakEvenSL = NormalizeDouble(MathRound(BreakEvenSL / TickSize) * TickSize, eDigits);
         }
-
-        // For BUY orders
-        if (OrderType() == OP_BUY)
+        if ((OrderType() == OP_BUY) && (SLBuy < MarketInfo(Instrument, MODE_BID) - StopLevel))
         {
-            // First set initial SL if needed (only when EnableProfitThreshold is true)
-            if (EnableProfitThreshold && (SLPrice == 0 || SLPrice < BreakEvenSL))
+            NewSL = NormalizeDouble(SLBuy, eDigits);
+            NewTP = TPPrice;
+            if ((NewSL > SLPrice) || (SLPrice == 0))
             {
-                NewSL = BreakEvenSL;
-                NewTP = TPPrice;
                 ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
             }
-            // Then check ATR SL
-            else if (SLBuy < MarketInfo(Instrument, MODE_BID) - StopLevel)
-            {
-                NewSL = NormalizeDouble(SLBuy, eDigits);
-                NewTP = TPPrice;
-                double SLChangePoints = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                if (NewSL > SLPrice && SLChangePoints >= MinSLChangePoints)
-                {
-                    ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
-                }
-            }
         }
-        // For SELL orders
-        else if (OrderType() == OP_SELL)
+        else if ((OrderType() == OP_SELL) && (SLSell > MarketInfo(Instrument, MODE_ASK) + StopLevel))
         {
-            // First set initial SL if needed (only when EnableProfitThreshold is true)
-            if (EnableProfitThreshold && (SLPrice == 0 || SLPrice > BreakEvenSL))
+            NewSL = NormalizeDouble(SLSell + Spread, eDigits);
+            NewTP = TPPrice;
+            if ((NewSL < SLPrice) || (SLPrice == 0))
             {
-                NewSL = BreakEvenSL;
-                NewTP = TPPrice;
                 ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
-            }
-            // Then check ATR SL
-            else if (SLSell > MarketInfo(Instrument, MODE_ASK) + StopLevel)
-            {
-                NewSL = NormalizeDouble(SLSell + Spread, eDigits);
-                NewTP = TPPrice;
-                double SLChangePoints = MathAbs(SLPrice - NewSL) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                if (NewSL < SLPrice && SLChangePoints >= MinSLChangePoints)
-                {
-                    ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
-                }
             }
         }
     }
