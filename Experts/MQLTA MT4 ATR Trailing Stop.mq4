@@ -1,14 +1,14 @@
-#property link          "https://www.earnforex.com/metatrader-expert-advisors/atr-trailing-stop/"
-#property version       "1.08"
+#property link "https://www.earnforex.com/metatrader-expert-advisors/atr-trailing-stop/"
+#property version "1.08"
 #property strict
-#property copyright     "EarnForex.com - 2019-2024"
-#property description   "This expert advisor will trail the stop-loss using ATR as a distance from the price."
-#property description   " "
-#property description   "WARNING: Use this software at your own risk."
-#property description   "The creator of this EA cannot be held responsible for any damage or loss."
-#property description   " "
-#property description   "Find More on www.EarnForex.com"
-#property icon          "\\Files\\EF-Icon-64x64px.ico"
+#property copyright "EarnForex.com - 2019-2024"
+#property description "This expert advisor will trail the stop-loss using ATR as a distance from the price."
+#property description " "
+#property description "WARNING: Use this software at your own risk."
+#property description "The creator of this EA cannot be held responsible for any damage or loss."
+#property description " "
+#property description "Find More on www.EarnForex.com"
+#property icon "\\Files\\EF-Icon-64x64px.ico"
 
 #include <MQLTA ErrorHandling.mqh>
 #include <MQLTA Utils.mqh>
@@ -22,22 +22,23 @@ enum ENUM_CONSIDER
 
 enum ENUM_CUSTOMTIMEFRAMES
 {
-    CURRENT = PERIOD_CURRENT,           // CURRENT PERIOD
-    M1 = PERIOD_M1,                     // M1
-    M5 = PERIOD_M5,                     // M5
-    M15 = PERIOD_M15,                   // M15
-    M30 = PERIOD_M30,                   // M30
-    H1 = PERIOD_H1,                     // H1
-    H4 = PERIOD_H4,                     // H4
-    D1 = PERIOD_D1,                     // D1
-    W1 = PERIOD_W1,                     // W1
-    MN1 = PERIOD_MN1,                   // MN1
+    CURRENT = PERIOD_CURRENT, // CURRENT PERIOD
+    M1 = PERIOD_M1,           // M1
+    M5 = PERIOD_M5,           // M5
+    M15 = PERIOD_M15,         // M15
+    M30 = PERIOD_M30,         // M30
+    H1 = PERIOD_H1,           // H1
+    H4 = PERIOD_H4,           // H4
+    D1 = PERIOD_D1,           // D1
+    W1 = PERIOD_W1,           // W1
+    MN1 = PERIOD_MN1,         // MN1
 };
 
 input string Comment_1 = "====================";  // Expert Advisor Settings
 input int ATRPeriod = 14;                         // ATR Period
 input int Shift = 1;                              // Shift In The ATR Value (1=Previous Candle)
 input double ATRMultiplier = 1.0;                 // ATR Multiplier
+input int StopLossChangeThreshold = 100;          // Minimum Points To Move Stop Loss
 input string Comment_2 = "====================";  // Orders Filtering Options
 input bool OnlyCurrentSymbol = true;              // Apply To Current Symbol Only
 input ENUM_CONSIDER OnlyType = All;               // Apply To
@@ -74,7 +75,8 @@ int OnInit()
     PanelLabY = PanelMovY;
     PanelRecX = PanelLabX + 4;
 
-    if (ShowPanel) DrawPanel();
+    if (ShowPanel)
+        DrawPanel();
 
     return INIT_SUCCEEDED;
 }
@@ -86,8 +88,10 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
-    if (EnableTrailing) TrailingStop();
-    if (ShowPanel) DrawPanel();
+    if (EnableTrailing)
+        TrailingStop();
+    if (ShowPanel)
+        DrawPanel();
 }
 
 void OnChartEvent(const int id,
@@ -130,7 +134,7 @@ void TrailingStop()
 {
     for (int i = 0; i < OrdersTotal(); i++)
     {
-        if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES ) == false)
+        if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES) == false)
         {
             int Error = GetLastError();
             string ErrorText = GetLastErrorText(Error);
@@ -138,10 +142,14 @@ void TrailingStop()
             Print("ERROR - ", ErrorText);
             continue;
         }
-        if ((OnlyCurrentSymbol) && (OrderSymbol() != Symbol())) continue;
-        if ((UseMagic) && (OrderMagicNumber() != MagicNumber)) continue;
-        if ((UseComment) && (StringFind(OrderComment(), CommentFilter) < 0)) continue;
-        if ((OnlyType != All) && (OrderType() != OnlyType)) continue;
+        if ((OnlyCurrentSymbol) && (OrderSymbol() != Symbol()))
+            continue;
+        if ((UseMagic) && (OrderMagicNumber() != MagicNumber))
+            continue;
+        if ((UseComment) && (StringFind(OrderComment(), CommentFilter) < 0))
+            continue;
+        if ((OnlyType != All) && (OrderType() != OnlyType))
+            continue;
 
         double NewSL = 0;
         double NewTP = 0;
@@ -172,7 +180,9 @@ void TrailingStop()
         {
             NewSL = NormalizeDouble(SLBuy, eDigits);
             NewTP = TPPrice;
-            if ((NewSL > SLPrice) || (SLPrice == 0))
+            double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
+            // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
+            if ((SLPrice == 0) || ((NewSL > SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
             {
                 ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
             }
@@ -181,7 +191,9 @@ void TrailingStop()
         {
             NewSL = NormalizeDouble(SLSell + Spread, eDigits);
             NewTP = TPPrice;
-            if ((NewSL < SLPrice) || (SLPrice == 0))
+            double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
+            // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
+            if ((SLPrice == 0) || ((NewSL < SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
             {
                 ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
             }
@@ -224,25 +236,29 @@ void ModifyOrder(int Ticket, double OpenPrice, double SLPrice, double TPPrice)
 
 void NotifyStopLossUpdate(int OrderNumber, double SLPrice, string symbol)
 {
-    if (!EnableNotify) return;
-    if ((!SendAlert) && (!SendApp) && (!SendEmail)) return;
+    if (!EnableNotify)
+        return;
+    if ((!SendAlert) && (!SendApp) && (!SendEmail))
+        return;
     string EmailSubject = ExpertName + " " + symbol + " Notification ";
     string EmailBody = AccountCompany() + " - " + AccountName() + " - " + IntegerToString(AccountNumber()) + "\r\n" + ExpertName + " Notification for " + symbol + "\r\n";
     EmailBody += "Stop-loss for order " + IntegerToString(OrderNumber) + " moved to " + DoubleToString(SLPrice, (int)MarketInfo(symbol, MODE_DIGITS));
     string AlertText = ExpertName + " - " + symbol + " - stop-loss for order " + IntegerToString(OrderNumber) + " was moved to " + DoubleToString(SLPrice, (int)MarketInfo(symbol, MODE_DIGITS));
     string AppText = AccountCompany() + " - " + AccountName() + " - " + IntegerToString(AccountNumber()) + " - " + ExpertName + " - " + symbol + " - ";
     AppText += "stop-loss for order: " + IntegerToString(OrderNumber) + " was moved to " + DoubleToString(SLPrice, (int)MarketInfo(symbol, MODE_DIGITS)) + "";
-    if (SendAlert) Alert(AlertText);
+    if (SendAlert)
+        Alert(AlertText);
     if (SendEmail)
     {
-        if (!SendMail(EmailSubject, EmailBody)) Print("Error sending email " + IntegerToString(GetLastError()));
+        if (!SendMail(EmailSubject, EmailBody))
+            Print("Error sending email " + IntegerToString(GetLastError()));
     }
     if (SendApp)
     {
-        if (!SendNotification(AppText)) Print("Error sending notification " + IntegerToString(GetLastError()));
+        if (!SendNotification(AppText))
+            Print("Error sending notification " + IntegerToString(GetLastError()));
     }
 }
-
 
 string PanelBase = ExpertName + "-P-BAS";
 string PanelLabel = ExpertName + "-P-LAB";
@@ -253,7 +269,8 @@ void DrawPanel()
     string PanelToolTip = "ATR Trailing Stop-Loss By EarnForex.com";
 
     int Rows = 1;
-    if (ObjectFind(0, PanelBase) < 0) ObjectCreate(0, PanelBase, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+    if (ObjectFind(0, PanelBase) < 0)
+        ObjectCreate(0, PanelBase, OBJ_RECTANGLE_LABEL, 0, 0, 0);
     ObjectSetInteger(0, PanelBase, OBJPROP_XDISTANCE, Xoff);
     ObjectSetInteger(0, PanelBase, OBJPROP_YDISTANCE, Yoff);
     ObjectSetInteger(0, PanelBase, OBJPROP_XSIZE, PanelRecX);
@@ -300,7 +317,7 @@ void DrawPanel()
 
     DrawEdit(PanelEnableDisable,
              Xoff + 2,
-             Yoff + (PanelMovY + 1)*Rows + 2,
+             Yoff + (PanelMovY + 1) * Rows + 2,
              PanelLabX,
              PanelLabY,
              true,
@@ -328,13 +345,15 @@ void ChangeTrailingEnabled()
 {
     if (EnableTrailing == false)
     {
-        if (IsTradeAllowed()) EnableTrailing = true;
+        if (IsTradeAllowed())
+            EnableTrailing = true;
         else
         {
             MessageBox("You need to first enable Live Trading in the EA options.", "WARNING", MB_OK);
         }
     }
-    else EnableTrailing = false;
+    else
+        EnableTrailing = false;
     DrawPanel();
 }
 //+------------------------------------------------------------------+
