@@ -13,6 +13,10 @@
 #include <MQLTA ErrorHandling.mqh>
 #include <MQLTA Utils.mqh>
 #define ESC_KEY_CODE 27
+#define DPI_BASE_VALUE 96.0
+#define DEFAULT_RETRY_COUNT 5
+#define PANEL_FONT_SIZE 8
+#define PANEL_TITLE_FONT_SIZE 10
 
 enum ENUM_CONSIDER
 {
@@ -63,7 +67,7 @@ input string ExpertName = "MQLTA-ATRTS";          // Expert Name (to name the ob
 input int Xoff = 20;                              // Horizontal spacing for the control panel
 input int Yoff = 20;                              // Vertical spacing for the control panel
 
-int OrderOpRetry = 5;
+int OrderOpRetry = DEFAULT_RETRY_COUNT;
 bool EnableTrailing = EnableTrailingParam;
 bool EnableBreakEven = EnableBreakEvenParam;
 double DPIScale; // Scaling parameter for the panel based on the screen DPI.
@@ -71,13 +75,33 @@ int PanelMovX, PanelMovY, PanelLabX, PanelLabY, PanelRecX;
 bool EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
 string PanelATRAfterBreakEven = ExpertName + "-P-ATRBE";
 
+struct mMarketInfo
+{
+    string symbol;
+    double bid, ask, point, spread, stopLevel;
+    int digits;
+    double tickSize;
+
+    void Update(string sym)
+    {
+        symbol = sym;
+        bid = MarketInfo(symbol, MODE_BID);
+        ask = MarketInfo(symbol, MODE_ASK);
+        point = MarketInfo(symbol, MODE_POINT);
+        spread = MarketInfo(symbol, MODE_SPREAD) * point;
+        stopLevel = MarketInfo(symbol, MODE_STOPLEVEL) * point;
+        digits = (int)MarketInfo(symbol, MODE_DIGITS);
+        tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+    }
+};
+
 int OnInit()
 {
     EnableTrailing = EnableTrailingParam;
     EnableBreakEven = EnableBreakEvenParam;
     EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
 
-    DPIScale = (double)TerminalInfoInteger(TERMINAL_SCREEN_DPI) / 96.0;
+    DPIScale = (double)TerminalInfoInteger(TERMINAL_SCREEN_DPI) / DPI_BASE_VALUE;
 
     PanelMovX = (int)MathRound(50 * DPIScale);
     PanelMovY = (int)MathRound(20 * DPIScale);
@@ -194,84 +218,129 @@ double CalculateAndNormalizeSL(string Instrument, int orderType)
     return sl;
 }
 
+bool SelectAndValidateOrder(int index)
+{
+    if (!OrderSelect(index, SELECT_BY_POS, MODE_TRADES))
+    {
+        int error = GetLastError();
+        Print("ERROR - Unable to select order - ", error, ": ", GetLastErrorText(error));
+        return false;
+    }
+    return ShouldProcessOrder();
+}
+
 void TrailingStop()
 {
     for (int i = 0; i < OrdersTotal(); i++)
     {
-        if (!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+        if (SelectAndValidateOrder(i))
         {
-            int error = GetLastError();
-            Print("ERROR - Unable to select order - ", error, ": ", GetLastErrorText(error));
-            continue;
+            // 处理单个订单
+            ProcessSingleOrder();
         }
-
-        if (!ShouldProcessOrder())
-            continue;
-
-        string Instrument = OrderSymbol();
-        double buySL = CalculateAndNormalizeSL(Instrument, OP_BUY);
-        double sellSL = CalculateAndNormalizeSL(Instrument, OP_SELL);
-
-        if (buySL == 0 || sellSL == 0)
+        else
         {
-            Print("Not enough historical data - please load more candles");
-            return;
+            Print("Skipping order at index ", i, " due to validation failure.");
         }
+    }
+}
 
-        int eDigits = (int)MarketInfo(Instrument, MODE_DIGITS);
-        double currentSL = NormalizeDouble(OrderStopLoss(), eDigits);
-        double spread = MarketInfo(Instrument, MODE_SPREAD) * MarketInfo(Instrument, MODE_POINT);
-        double stopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
-        double openPrice = OrderOpenPrice();
+// 处理保本逻辑
+void ProcessBreakEven(mMarketInfo &market)
+{
+    double openPrice = OrderOpenPrice();
+    double breakEvenPrice = GetBreakEvenPrice(OrderType(), openPrice, market.spread);
 
-        // 先处理保本逻辑
-        if (CheckBreakEvenCondition())
-        {
-            double breakEvenPrice = GetBreakEvenPrice(OrderType(), openPrice, spread);
-            double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
-            if (TickSize > 0)
-            {
-                breakEvenPrice = NormalizeDouble(MathRound(breakEvenPrice / TickSize) * TickSize, eDigits);
-            }
+    // 根据TickSize调整价格
+    if (market.tickSize > 0)
+    {
+        breakEvenPrice = NormalizeDouble(MathRound(breakEvenPrice / market.tickSize) * market.tickSize, market.digits);
+    }
 
-            // 检查是否需要更新止损
-            if ((currentSL == 0) ||
-                (OrderType() == OP_BUY && breakEvenPrice > currentSL) ||
-                (OrderType() == OP_SELL && breakEvenPrice < currentSL))
-            {
-                ModifyOrder(OrderTicket(), openPrice, breakEvenPrice, OrderTakeProfit());
-                continue;
-            }
-        }
+    double currentSL = NormalizeDouble(OrderStopLoss(), market.digits);
 
-        // 再处理常规追踪
-        if (EnableTrailing)
-        {
-            if (EnableATRAfterBreakEven && !CheckBreakEvenCondition())
-                continue;
+    // 检查是否需要更新止损
+    if ((currentSL == 0) ||
+        (OrderType() == OP_BUY && breakEvenPrice > currentSL) ||
+        (OrderType() == OP_SELL && breakEvenPrice < currentSL))
+    {
+        ModifyOrder(OrderTicket(), openPrice, breakEvenPrice, OrderTakeProfit());
+    }
+}
 
-            double newSL = 0;
-            double tpPrice = NormalizeDouble(OrderTakeProfit(), eDigits);
+// 处理ATR追踪止损逻辑
+void ProcessTrailing(mMarketInfo &market)
+{
+    if (EnableATRAfterBreakEven && !CheckBreakEvenCondition())
+        return;
 
-            if (OrderType() == OP_BUY && buySL < MarketInfo(Instrument, MODE_BID) - stopLevel)
-            {
-                newSL = NormalizeDouble(buySL, eDigits);
-                double pointsDiff = MathAbs(newSL - currentSL) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                if (currentSL == 0 || (newSL > currentSL && pointsDiff >= StopLossChangeThreshold))
-                {
-                    ModifyOrder(OrderTicket(), openPrice, newSL, tpPrice);
-                }
-            }
-            else if (OrderType() == OP_SELL && sellSL > MarketInfo(Instrument, MODE_ASK) + stopLevel)
-            {
-                newSL = NormalizeDouble(sellSL + spread, eDigits);
-                double pointsDiff = MathAbs(newSL - currentSL) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                if (currentSL == 0 || (newSL < currentSL && pointsDiff >= StopLossChangeThreshold))
-                {
-                    ModifyOrder(OrderTicket(), openPrice, newSL, tpPrice);
-                }
-            }
-        }
+    double currentSL = NormalizeDouble(OrderStopLoss(), market.digits);
+    double openPrice = OrderOpenPrice();
+    double tpPrice = NormalizeDouble(OrderTakeProfit(), market.digits);
+
+    if (OrderType() == OP_BUY)
+    {
+        TryUpdateBuyStopLoss(market, currentSL, openPrice, tpPrice);
+    }
+    else if (OrderType() == OP_SELL)
+    {
+        TryUpdateSellStopLoss(market, currentSL, openPrice, tpPrice);
+    }
+}
+
+void TryUpdateBuyStopLoss(mMarketInfo &market, double currentSL, double openPrice, double tpPrice)
+{
+    double buySL = CalculateAndNormalizeSL(market.symbol, OP_BUY);
+    if (buySL >= market.bid - market.stopLevel)
+        return;
+
+    double pointsDiff = MathAbs(buySL - currentSL) / market.point;
+    if (currentSL == 0 || (buySL > currentSL && pointsDiff >= StopLossChangeThreshold))
+    {
+        ModifyOrder(OrderTicket(), openPrice, buySL, tpPrice);
+    }
+}
+
+void TryUpdateSellStopLoss(mMarketInfo &market, double currentSL, double openPrice, double tpPrice)
+{
+    double sellSL = CalculateAndNormalizeSL(market.symbol, OP_SELL) + market.spread;
+    if (sellSL <= market.ask + market.stopLevel)
+        return;
+
+    double pointsDiff = MathAbs(sellSL - currentSL) / market.point;
+    if (currentSL == 0 || (sellSL < currentSL && pointsDiff >= StopLossChangeThreshold))
+    {
+        ModifyOrder(OrderTicket(), openPrice, sellSL, tpPrice);
+    }
+}
+
+// 重构后的主要处理函数
+void ProcessSingleOrder()
+{
+    mMarketInfo market;
+    market.Update(OrderSymbol());
+
+    // 验证市场数据
+    double buySL = CalculateAndNormalizeSL(market.symbol, OP_BUY);
+    double sellSL = CalculateAndNormalizeSL(market.symbol, OP_SELL);
+
+    if (buySL == 0 || sellSL == 0)
+    {
+        Print("Not enough historical data - please load more candles");
+        return;
+    }
+
+    // 优先处理保本逻辑
+    if (EnableBreakEven && CheckBreakEvenCondition())
+    {
+        ProcessBreakEven(market);
+        return; // 保本处理完成后直接返回，不再进行追踪止损
+    }
+
+    // 处理ATR追踪止损
+    if (EnableTrailing)
+    {
+        ProcessTrailing(market);
     }
 }
 
@@ -379,7 +448,7 @@ void DrawPanelButton(string objName, int &row, string text, string tooltip, bool
              PanelLabX,
              PanelLabY,
              true,
-             8,
+             PANEL_FONT_SIZE,
              tooltip,
              ALIGN_CENTER,
              "Consolas",
@@ -418,7 +487,7 @@ void DrawPanel()
              PanelLabX,
              PanelLabY,
              true,
-             10,
+             PANEL_TITLE_FONT_SIZE,
              PanelToolTip,
              ALIGN_CENTER,
              "Consolas",
@@ -431,7 +500,7 @@ void DrawPanel()
     // 使用通用函数绘制各个按钮
     DrawPanelButton(PanelEnableDisable, Rows, "TRAILING", "Click to Enable or Disable the Trailing Stop Feature", EnableTrailing);
     DrawPanelButton(PanelBreakEven, Rows, "BREAK EVEN", "Click to Enable or Disable the Break Even Feature", EnableBreakEven);
-    DrawPanelButton(PanelATRAfterBreakEven, Rows, "ATR AFTER BE", "只有在达到保本条件后才启用ATR追踪止损", EnableATRAfterBreakEven, !EnableBreakEven);
+    DrawPanelButton(PanelATRAfterBreakEven, Rows, "ATR AFTER BE", "只有在达到保本条件后才启用ATR追踪止损", EnableATRAfterBreakEven, !EnableBreakEven || !EnableTrailing);
 
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
@@ -478,6 +547,12 @@ void ChangeATRAfterBreakEvenEnabled()
     if (!EnableBreakEven)
     {
         MessageBox("请先启用Break Even功能。", "警告", MB_OK);
+        return;
+    }
+
+    if (!EnableTrailing)
+    {
+        MessageBox("请先启用TRAILING功能。", "警告", MB_OK);
         return;
     }
 
