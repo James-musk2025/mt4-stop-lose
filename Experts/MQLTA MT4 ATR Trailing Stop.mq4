@@ -510,22 +510,24 @@ double GetBreakEvenPrice(int type, double openPrice, string symbol)
 
     return bePrice;
 }
+double GetOrderProfitPoints(int type, double openPrice, string symbol)
+{
+    double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0;
+    double orderProfit = OrderProfit();
+    double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
+
+    double profit = orderProfit - spread;
+    if (ConsiderCommissionInBreakEven)
+        profit -= MathAbs(commission);
+        
+    return profit;
+}
 
 bool CheckBreakEvenCondition(int type, double openPrice, string symbol)
 {
     if (!EnableBreakEven)
         return false;
 
-    double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0; // 根据设置决定是否考虑佣金
-    double lots = OrderLots();
-    double orderProfit = OrderProfit(); // 订单的当前盈利
-    double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
-
-    // 计算实际盈亏点数
-    double profit = orderProfit - spread;
-    if (ConsiderCommissionInBreakEven)
-        profit -= MathAbs(commission);
-
-    return (profit >= ProfitForBreakEven);
+    return (GetOrderProfitPoints(type, openPrice, symbol) >= ProfitForBreakEven);
 }
 //+------------------------------------------------------------------+
