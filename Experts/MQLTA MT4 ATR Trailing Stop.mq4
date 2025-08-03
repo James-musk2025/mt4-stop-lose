@@ -47,7 +47,8 @@ input int MagicNumber = 0;                        // Magic Number (if above is t
 input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
 input bool EnableTrailingParam = false;           // Enable Trailing Stop
-input bool EnableBreakEvenParam = true;          // Enable Break Even
+input bool EnableBreakEvenParam = true;           // Enable Break Even
+input bool EnableATRAfterBreakEvenParam = false;  // Enable ATR After Break Even
 input double ProfitForBreakEven = 5.25;           // Pips Required for Break Even
 input bool ConsiderCommissionInBreakEven = false; // Consider Commission in Break Even
 input string Comment_3 = "====================";  // Notification Options
@@ -66,11 +67,14 @@ bool EnableTrailing = EnableTrailingParam;
 bool EnableBreakEven = EnableBreakEvenParam;
 double DPIScale; // Scaling parameter for the panel based on the screen DPI.
 int PanelMovX, PanelMovY, PanelLabX, PanelLabY, PanelRecX;
+bool EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
+string PanelATRAfterBreakEven = ExpertName + "-P-ATRBE";
 
 int OnInit()
 {
     EnableTrailing = EnableTrailingParam;
     EnableBreakEven = EnableBreakEvenParam;
+    EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
 
     DPIScale = (double)TerminalInfoInteger(TERMINAL_SCREEN_DPI) / 96.0;
 
@@ -113,6 +117,17 @@ void OnChartEvent(const int id,
         else if (sparam == PanelBreakEven)
         {
             ChangeBreakEvenEnabled();
+        }
+        else if (sparam == PanelBreakEven)
+        {
+            ChangeBreakEvenEnabled();
+            // 如果关闭保本功能，同时关闭ATR After Break Even
+            if (!EnableBreakEven)
+                EnableATRAfterBreakEven = false;
+        }
+        else if (sparam == PanelATRAfterBreakEven)
+        {
+            ChangeATRAfterBreakEvenEnabled();
         }
     }
     else if (id == CHARTEVENT_KEYDOWN)
@@ -212,12 +227,15 @@ void TrailingStop()
         // Regular trailing stop logic
         if (EnableTrailing)
         {
+            // 如果启用了ATR After Break Even，需要先检查是否达到保本条件
+            if (EnableATRAfterBreakEven && !CheckBreakEvenCondition())
+                continue;
+
             if ((OrderType() == OP_BUY) && (SLBuy < MarketInfo(Instrument, MODE_BID) - StopLevel))
             {
                 NewSL = NormalizeDouble(SLBuy, eDigits);
                 NewTP = TPPrice;
                 double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
                 if ((SLPrice == 0) || ((NewSL > SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
                 {
                     ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
@@ -228,7 +246,6 @@ void TrailingStop()
                 NewSL = NormalizeDouble(SLSell + Spread, eDigits);
                 NewTP = TPPrice;
                 double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": New SL=", NewSL, " Old SL=", SLPrice, " PointsDiff=", PointsDiff, " MinPointsMove=", StopLossChangeThreshold);
                 if ((SLPrice == 0) || ((NewSL < SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
                 {
                     ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
@@ -405,6 +422,47 @@ void DrawPanel()
 
     Rows++;
 
+    string ATRAfterBreakEvenText = "";
+    color ATRAfterBreakEvenColor = clrNavy;
+    color ATRAfterBreakEvenBack = clrKhaki;
+
+    if (!EnableBreakEven)
+    {
+        ATRAfterBreakEvenText = "ATR AFTER BE LOCKED";
+        ATRAfterBreakEvenColor = clrGray;
+        ATRAfterBreakEvenBack = clrLightGray;
+    }
+    else if (EnableATRAfterBreakEven)
+    {
+        ATRAfterBreakEvenText = "ATR AFTER BE ON";
+        ATRAfterBreakEvenColor = clrWhite;
+        ATRAfterBreakEvenBack = clrDarkGreen;
+    }
+    else
+    {
+        ATRAfterBreakEvenText = "ATR AFTER BE OFF";
+        ATRAfterBreakEvenColor = clrWhite;
+        ATRAfterBreakEvenBack = clrDarkRed;
+    }
+
+    DrawEdit(PanelATRAfterBreakEven,
+             Xoff + 2,
+             Yoff + (PanelMovY + 1) * Rows + 2,
+             PanelLabX,
+             PanelLabY,
+             true,
+             8,
+             "只有在达到保本条件后才启用ATR追踪止损",
+             ALIGN_CENTER,
+             "Consolas",
+             ATRAfterBreakEvenText,
+             false,
+             ATRAfterBreakEvenColor,
+             ATRAfterBreakEvenBack,
+             clrBlack);
+
+    Rows++;
+
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
 
@@ -442,6 +500,28 @@ void ChangeBreakEvenEnabled()
     }
     else
         EnableBreakEven = false;
+    DrawPanel();
+}
+
+void ChangeATRAfterBreakEvenEnabled()
+{
+    if (!EnableBreakEven)
+    {
+        MessageBox("请先启用Break Even功能。", "警告", MB_OK);
+        return;
+    }
+
+    if (EnableATRAfterBreakEven == false)
+    {
+        if (IsTradeAllowed())
+            EnableATRAfterBreakEven = true;
+        else
+        {
+            MessageBox("You need to first enable Live Trading in the EA options.", "WARNING", MB_OK);
+        }
+    }
+    else
+        EnableATRAfterBreakEven = false;
     DrawPanel();
 }
 
