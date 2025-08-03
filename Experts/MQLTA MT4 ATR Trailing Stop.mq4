@@ -48,7 +48,7 @@ input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
 input bool EnableTrailingParam = false;           // Enable Trailing Stop
 input bool EnableBreakEvenParam = false;          // Enable Break Even
-input double ProfitPipsForBreakEven = 20;         // Pips Required for Break Even
+input double ProfitForBreakEven = 500.25;         // Pips Required for Break Even
 input bool ConsiderCommissionInBreakEven = true;  // Consider Commission in Break Even
 input string Comment_3 = "====================";  // Notification Options
 input bool EnableNotify = false;                  // Enable Notifications feature
@@ -490,12 +490,14 @@ double GetBreakEvenPrice(int type, double openPrice, string symbol)
     if (type == OP_BUY)
     {
         // 买入订单的保本价 = 开仓价 + 佣金对应的点数（换算为价格）
-        bePrice = openPrice + commissionPoints * point + spread;
+        // 开仓价已经包含了点差（Ask价格），所以不需要再加点差
+        bePrice = openPrice + commissionPoints * point;
     }
     else if (type == OP_SELL)
     {
         // 卖出订单的保本价 = 开仓价 - 佣金对应的点数（换算为价格）
-        bePrice = openPrice - commissionPoints * point - spread;
+        // 开仓价是Bid价格，不需要考虑点差
+        bePrice = openPrice - commissionPoints * point;
     }
 
     Print("DEBUG - Order ", OrderTicket(), " in ", symbol,
@@ -514,44 +516,16 @@ bool CheckBreakEvenCondition(int type, double openPrice, string symbol)
     if (!EnableBreakEven)
         return false;
 
-    double bid = MarketInfo(symbol, MODE_BID);
-    double ask = MarketInfo(symbol, MODE_ASK);
-    double point = MarketInfo(symbol, MODE_POINT);                             // 一个点的值
-    double spread = MarketInfo(symbol, MODE_SPREAD) * point;                   // 点差
     double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0; // 根据设置决定是否考虑佣金
     double lots = OrderLots();
+    double orderProfit = OrderProfit(); // 订单的当前盈利
+    double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
 
     // 计算实际盈亏点数
-    double profitInPoints;
-    if (type == OP_BUY)
-    {
-        // 买单：使用 Bid 价计算盈亏点数（Bid 价已经考虑了点差）
-        profitInPoints = (bid - openPrice) / point;
-        // 如果考虑佣金，从盈利点数中减去佣金对应的点数
-        if (ConsiderCommissionInBreakEven)
-            profitInPoints -= MathAbs(commission / lots) / point;
-    }
-    else if (type == OP_SELL)
-    {
-        // 卖单：使用 Ask 价计算盈亏点数（Ask 价已经考虑了点差）
-        profitInPoints = (openPrice - ask) / point;
-        // 如果考虑佣金，从盈利点数中减去佣金对应的点数
-        if (ConsiderCommissionInBreakEven)
-            profitInPoints -= MathAbs(commission / lots) / point;
-    }
-    else
-        return false;
+    double profit = orderProfit - spread;
+    if (ConsiderCommissionInBreakEven)
+        profit -= MathAbs(commission);
 
-    // Print("DEBUG - Order ", OrderTicket(), " in ", symbol,
-    //       ": Type=", (type == OP_BUY ? "BUY" : "SELL"),
-    //       " Open Price=", openPrice,
-    //       " Current Bid=", bid,
-    //       " Current Ask=", ask,
-    //       " Order Profit=", OrderProfit(),
-    //       " Commission Considered=", (ConsiderCommissionInBreakEven ? "Yes" : "No"),
-    //       " Profit Points=", profitInPoints,
-    //       " Required Points=", ProfitPipsForBreakEven);
-
-    return (profitInPoints >= ProfitPipsForBreakEven);
+    return (profit >= ProfitForBreakEven);
 }
 //+------------------------------------------------------------------+
