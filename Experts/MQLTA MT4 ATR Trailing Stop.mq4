@@ -12,6 +12,7 @@
 
 #include <MQLTA ErrorHandling.mqh>
 #include <MQLTA Utils.mqh>
+#define ESC_KEY_CODE 27
 
 enum ENUM_CONSIDER
 {
@@ -110,49 +111,54 @@ void OnChartEvent(const int id,
 {
     if (id == CHARTEVENT_OBJECT_CLICK)
     {
-        if (sparam == PanelEnableDisable)
-        {
-            ChangeTrailingEnabled();
-        }
-        else if (sparam == PanelBreakEven)
-        {
-            ChangeBreakEvenEnabled();
-        }
-        else if (sparam == PanelBreakEven)
-        {
-            ChangeBreakEvenEnabled();
-            // 如果关闭保本功能，同时关闭ATR After Break Even
-            if (!EnableBreakEven)
-                EnableATRAfterBreakEven = false;
-        }
-        else if (sparam == PanelATRAfterBreakEven)
-        {
-            ChangeATRAfterBreakEvenEnabled();
-        }
+        HandlePanelClick(sparam);
     }
     else if (id == CHARTEVENT_KEYDOWN)
     {
-        if (lparam == 27)
-        {
-            if (MessageBox("Are you sure you want to close the EA?", "EXIT ?", MB_YESNO) == IDYES)
-            {
-                ExpertRemove();
-            }
-        }
+        HandleKeyPress(lparam);
     }
 }
 
+void HandlePanelClick(const string &objectName)
+{
+    if (objectName == PanelEnableDisable)
+    {
+        ChangeTrailingEnabled();
+    }
+    else if (objectName == PanelBreakEven)
+    {
+        ChangeBreakEvenEnabled();
+        // 如果关闭保本功能，同时关闭ATR After Break Even
+        if (!EnableBreakEven)
+            EnableATRAfterBreakEven = false;
+    }
+    else if (objectName == PanelATRAfterBreakEven)
+    {
+        ChangeATRAfterBreakEvenEnabled();
+    }
+}
+
+void HandleKeyPress(const long keyCode)
+{
+    if (keyCode == ESC_KEY_CODE)
+    {
+        if (MessageBox("Are you sure you want to close the EA?", "EXIT ?", MB_YESNO) == IDYES)
+        {
+            ExpertRemove();
+        }
+    }
+}
 // 统一计算止损价格函数
 double CalculateStopLossPrice(string Instrument, int orderType)
 {
     double closePrice = iClose(Instrument, PERIOD_CURRENT, 0);
     double atrValue = iATR(Instrument, PERIOD_CURRENT, ATRPeriod, Shift) * ATRMultiplier;
-    
+
     if (orderType == OP_BUY)
         return closePrice - atrValue;
     else if (orderType == OP_SELL)
         return closePrice + atrValue;
-    
+
     return 0;
 }
 
@@ -167,7 +173,7 @@ bool ShouldProcessOrder()
         return false;
     if ((OnlyType != All) && (OrderType() != OnlyType))
         return false;
-    
+
     return true;
 }
 
@@ -177,14 +183,14 @@ double CalculateAndNormalizeSL(string Instrument, int orderType)
     double sl = CalculateStopLossPrice(Instrument, orderType);
     int eDigits = (int)MarketInfo(Instrument, MODE_DIGITS);
     sl = NormalizeDouble(sl, eDigits);
-    
+
     // 根据TickSize调整
     double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
     if (TickSize > 0)
     {
         sl = NormalizeDouble(MathRound(sl / TickSize) * TickSize, eDigits);
     }
-    
+
     return sl;
 }
 
@@ -198,45 +204,46 @@ void TrailingStop()
             Print("ERROR - Unable to select order - ", error, ": ", GetLastErrorText(error));
             continue;
         }
-        
-        if (!ShouldProcessOrder()) continue;
-        
+
+        if (!ShouldProcessOrder())
+            continue;
+
         string Instrument = OrderSymbol();
         double buySL = CalculateAndNormalizeSL(Instrument, OP_BUY);
         double sellSL = CalculateAndNormalizeSL(Instrument, OP_SELL);
-        
+
         if (buySL == 0 || sellSL == 0)
         {
             Print("Not enough historical data - please load more candles");
             return;
         }
-        
+
         int eDigits = (int)MarketInfo(Instrument, MODE_DIGITS);
         double currentSL = NormalizeDouble(OrderStopLoss(), eDigits);
         double spread = MarketInfo(Instrument, MODE_SPREAD) * MarketInfo(Instrument, MODE_POINT);
         double stopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
         double openPrice = OrderOpenPrice();
-        
+
         // 先处理保本逻辑
         if (CheckBreakEvenCondition())
         {
-            double bePrice = GetBreakEvenPrice(OrderType(), openPrice, spread);
+            double breakEvenPrice = GetBreakEvenPrice(OrderType(), openPrice, spread);
             double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
             if (TickSize > 0)
             {
-                bePrice = NormalizeDouble(MathRound(bePrice / TickSize) * TickSize, eDigits);
+                breakEvenPrice = NormalizeDouble(MathRound(breakEvenPrice / TickSize) * TickSize, eDigits);
             }
 
             // 检查是否需要更新止损
             if ((currentSL == 0) ||
-                (OrderType() == OP_BUY && bePrice > currentSL) ||
-                (OrderType() == OP_SELL && bePrice < currentSL))
+                (OrderType() == OP_BUY && breakEvenPrice > currentSL) ||
+                (OrderType() == OP_SELL && breakEvenPrice < currentSL))
             {
-                ModifyOrder(OrderTicket(), openPrice, bePrice, OrderTakeProfit());
+                ModifyOrder(OrderTicket(), openPrice, breakEvenPrice, OrderTakeProfit());
                 continue;
             }
         }
-        
+
         // 再处理常规追踪
         if (EnableTrailing)
         {
@@ -245,7 +252,7 @@ void TrailingStop()
 
             double newSL = 0;
             double tpPrice = NormalizeDouble(OrderTakeProfit(), eDigits);
-            
+
             if (OrderType() == OP_BUY && buySL < MarketInfo(Instrument, MODE_BID) - stopLevel)
             {
                 newSL = NormalizeDouble(buySL, eDigits);
@@ -277,12 +284,12 @@ bool TryModifyOrder(int ticket, double openPrice, double slPrice, double tpPrice
         Print("ERROR - SELECT TICKET - error selecting order ", ticket, ": ", error, " - ", GetLastErrorText(error));
         return false;
     }
-    
+
     string symbol = OrderSymbol();
     int eDigits = (int)MarketInfo(symbol, MODE_DIGITS);
     slPrice = NormalizeDouble(slPrice, eDigits);
     tpPrice = NormalizeDouble(tpPrice, eDigits);
-    
+
     for (int i = 1; i <= OrderOpRetry; i++)
     {
         if (OrderModify(ticket, openPrice, slPrice, tpPrice, 0, clrBlue))
@@ -346,23 +353,26 @@ void DrawPanelButton(string objName, int &row, string text, string tooltip, bool
     string buttonText = "";
     color textColor = clrNavy;
     color bgColor = clrKhaki;
-    
-    if (locked) {
+
+    if (locked)
+    {
         buttonText = text + " LOCKED";
         textColor = clrGray;
         bgColor = clrLightGray;
     }
-    else if (enabled) {
+    else if (enabled)
+    {
         buttonText = text + " ENABLED";
         textColor = clrWhite;
         bgColor = clrDarkGreen;
     }
-    else {
+    else
+    {
         buttonText = text + " DISABLED";
         textColor = clrWhite;
         bgColor = clrDarkRed;
     }
-    
+
     DrawEdit(objName,
              Xoff + 2,
              Yoff + (PanelMovY + 1) * row + 2,
@@ -378,7 +388,7 @@ void DrawPanelButton(string objName, int &row, string text, string tooltip, bool
              textColor,
              bgColor,
              clrBlack);
-             
+
     row++;
 }
 
@@ -485,32 +495,50 @@ void ChangeATRAfterBreakEvenEnabled()
     DrawPanel();
 }
 
-// 合并保本条件检查和价格计算
+/*
+ * CheckBreakEvenCondition: 检查当前订单是否达到保本条件
+ * 直接计算利润并与设定值比较，避免中间函数调用
+ */
 bool CheckBreakEvenCondition()
 {
-    if (!EnableBreakEven) return false;
-    
+    if (!EnableBreakEven)
+        return false;
+
     string symbol = OrderSymbol();
     double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
-    double orderProfit = OrderProfit();
     double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
-    
-    double profit = orderProfit - spread;
+
+    // 直接计算净利润
+    double netProfit = OrderProfit() - spread;
     if (ConsiderCommissionInBreakEven)
-        profit -= commission;
-    
-    return (profit >= ProfitForBreakEven);
+        netProfit -= commission;
+
+    return (netProfit >= ProfitForBreakEven);
 }
 
+/*
+ * GetBreakEvenPrice: 计算保本价格（Break Even Price）
+ *
+ * 保本价格是订单达到盈亏平衡点（不赚不赔）的价格水平：
+ * - 对于买单：开仓价 + 佣金 + 点差
+ * - 对于卖单：开仓价 - 佣金 - 点差
+ *
+ * 参数：
+ *   type: 订单类型 (OP_BUY/OP_SELL)
+ *   openPrice: 开仓价格
+ *   spread: 点差成本
+ *
+ * 返回：计算出的保本价格
+ */
 double GetBreakEvenPrice(int type, double openPrice, double spread)
 {
     double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
-    
+
     if (type == OP_BUY)
-        return openPrice + commission + spread;
+        return openPrice + commission + spread; // 买单需要价格上涨覆盖成本
     else if (type == OP_SELL)
-        return openPrice - commission - spread;
-    
-    return openPrice;
+        return openPrice - commission - spread; // 卖单需要价格下跌覆盖成本
+
+    return openPrice; // 未知订单类型返回开仓价
 }
 //+------------------------------------------------------------------+
