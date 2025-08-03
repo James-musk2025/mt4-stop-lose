@@ -47,9 +47,9 @@ input int MagicNumber = 0;                        // Magic Number (if above is t
 input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
 input bool EnableTrailingParam = false;           // Enable Trailing Stop
-input bool EnableBreakEvenParam = false;          // Enable Break Even
-input double ProfitForBreakEven = 500.25;         // Pips Required for Break Even
-input bool ConsiderCommissionInBreakEven = true;  // Consider Commission in Break Even
+input bool EnableBreakEvenParam = true;          // Enable Break Even
+input double ProfitForBreakEven = 5.25;           // Pips Required for Break Even
+input bool ConsiderCommissionInBreakEven = false; // Consider Commission in Break Even
 input string Comment_3 = "====================";  // Notification Options
 input bool EnableNotify = false;                  // Enable Notifications feature
 input bool SendAlert = true;                      // Send Alert Notification
@@ -188,41 +188,13 @@ void TrailingStop()
         double openPrice = OrderOpenPrice();
 
         // Check Break Even condition first
-        if (CheckBreakEvenCondition(OrderType(), openPrice, Instrument))
+        if (CheckBreakEvenCondition())
         {
-            double bePrice = GetBreakEvenPrice(OrderType(), openPrice, Instrument);
+            double bePrice = GetBreakEvenPrice(OrderType(), openPrice, Spread);
             // 对保本价进行Tick Size的规范化处理
             if (TickSize > 0)
             {
                 bePrice = NormalizeDouble(MathRound(bePrice / TickSize) * TickSize, eDigits);
-            }
-
-            // Print("DEBUG - Order ", OrderTicket(), " in ", Instrument, ": Break Even Price=", bePrice);
-            double minStopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
-            bool validStopDistance = true;
-
-            // 验证止损价格是否符合最小距离要求
-            if (OrderType() == OP_BUY)
-            {
-                double currentBid = MarketInfo(Instrument, MODE_BID);
-                validStopDistance = (bePrice <= currentBid - minStopLevel);
-                // 买单的止损价不能高于当前Bid价
-                if (bePrice > currentBid)
-                {
-                    Print("WARNING - Break even price ", bePrice, " is higher than current Bid price ", currentBid);
-                    continue;
-                }
-            }
-            else if (OrderType() == OP_SELL)
-            {
-                double currentAsk = MarketInfo(Instrument, MODE_ASK);
-                validStopDistance = (bePrice >= currentAsk + minStopLevel);
-                // 卖单的止损价不能低于当前Ask价
-                if (bePrice < currentAsk)
-                {
-                    Print("WARNING - Break even price ", bePrice, " is lower than current Ask price ", currentAsk);
-                    continue;
-                }
             }
 
             // 验证是否需要移动止损
@@ -230,14 +202,10 @@ void TrailingStop()
                                 (OrderType() == OP_BUY && bePrice > SLPrice) ||
                                 (OrderType() == OP_SELL && bePrice < SLPrice);
 
-            if (bePrice != 0 && validStopDistance && needToModify)
+            if (bePrice != 0 && needToModify)
             {
                 ModifyOrder(OrderTicket(), openPrice, bePrice, TPPrice);
                 continue;
-            }
-            else if (!validStopDistance)
-            {
-                Print("WARNING - Break even price ", bePrice, " is too close to current price. Minimum distance required: ", minStopLevel);
             }
         }
 
@@ -477,57 +445,43 @@ void ChangeBreakEvenEnabled()
     DrawPanel();
 }
 
-double GetBreakEvenPrice(int type, double openPrice, string symbol)
+double GetBreakEvenPrice(int type, double openPrice, double spread)
 {
-    double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0;                        // 佣金
-    double lots = OrderLots();                                                                        // 交易量
-    double point = MarketInfo(symbol, MODE_POINT);                                                    // 点值
-    double spread = MarketInfo(symbol, MODE_SPREAD) * point;                                          // 点差
-    double commissionPoints = ConsiderCommissionInBreakEven ? MathAbs(commission / lots) / point : 0; // 将佣金转换为点数
+    double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0; // 佣金
 
     // 计算保本价格
     double bePrice = openPrice; // 默认保本价为开仓价
     if (type == OP_BUY)
     {
-        // 买入订单的保本价 = 开仓价 + 佣金对应的点数（换算为价格）
-        // 开仓价已经包含了点差（Ask价格），所以不需要再加点差
-        bePrice = openPrice + commissionPoints * point;
+        bePrice = openPrice + commission + spread;
     }
     else if (type == OP_SELL)
     {
-        // 卖出订单的保本价 = 开仓价 - 佣金对应的点数（换算为价格）
-        // 开仓价是Bid价格，不需要考虑点差
-        bePrice = openPrice - commissionPoints * point;
+        bePrice = openPrice - commission - spread;
     }
-
-    Print("DEBUG - Order ", OrderTicket(), " in ", symbol,
-          ": Type=", (type == OP_BUY ? "BUY" : "SELL"),
-          " Open Price=", openPrice,
-          " Commission=", commission,
-          " Commission Per Lot=", commission / lots,
-          " Spread=", spread,
-          " Break Even Price=", bePrice);
 
     return bePrice;
 }
-double GetOrderProfitPoints(int type, double openPrice, string symbol)
+
+double GetSelectedOrderProfit()
 {
-    double commission = ConsiderCommissionInBreakEven ? OrderCommission() : 0;
+    string symbol = OrderSymbol();
+    double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
     double orderProfit = OrderProfit();
     double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
 
     double profit = orderProfit - spread;
     if (ConsiderCommissionInBreakEven)
-        profit -= MathAbs(commission);
-        
+        profit -= commission;
+
     return profit;
 }
 
-bool CheckBreakEvenCondition(int type, double openPrice, string symbol)
+bool CheckBreakEvenCondition()
 {
     if (!EnableBreakEven)
         return false;
 
-    return (GetOrderProfitPoints(type, openPrice, symbol) >= ProfitForBreakEven);
+    return (GetSelectedOrderProfit() >= ProfitForBreakEven);
 }
 //+------------------------------------------------------------------+
