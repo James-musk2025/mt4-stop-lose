@@ -142,150 +142,172 @@ void OnChartEvent(const int id,
     }
 }
 
-double GetStopLossBuy(string Instrument)
+// 统一计算止损价格函数
+double CalculateStopLossPrice(string Instrument, int orderType)
 {
-    double SLValue = iClose(Instrument, PERIOD_CURRENT, 0) - iATR(Instrument, PERIOD_CURRENT, ATRPeriod, Shift) * ATRMultiplier;
-    return SLValue;
+    double closePrice = iClose(Instrument, PERIOD_CURRENT, 0);
+    double atrValue = iATR(Instrument, PERIOD_CURRENT, ATRPeriod, Shift) * ATRMultiplier;
+    
+    if (orderType == OP_BUY)
+        return closePrice - atrValue;
+    else if (orderType == OP_SELL)
+        return closePrice + atrValue;
+    
+    return 0;
 }
 
-double GetStopLossSell(string Instrument)
+// 检查订单是否符合处理条件
+bool ShouldProcessOrder()
 {
-    double SLValue = iClose(Instrument, PERIOD_CURRENT, 0) + iATR(Instrument, PERIOD_CURRENT, ATRPeriod, Shift) * ATRMultiplier;
-    return SLValue;
+    if ((OnlyCurrentSymbol) && (OrderSymbol() != Symbol()))
+        return false;
+    if ((UseMagic) && (OrderMagicNumber() != MagicNumber))
+        return false;
+    if ((UseComment) && (StringFind(OrderComment(), CommentFilter) < 0))
+        return false;
+    if ((OnlyType != All) && (OrderType() != OnlyType))
+        return false;
+    
+    return true;
+}
+
+// 计算并规范化止损价格
+double CalculateAndNormalizeSL(string Instrument, int orderType)
+{
+    double sl = CalculateStopLossPrice(Instrument, orderType);
+    int eDigits = (int)MarketInfo(Instrument, MODE_DIGITS);
+    sl = NormalizeDouble(sl, eDigits);
+    
+    // 根据TickSize调整
+    double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
+    if (TickSize > 0)
+    {
+        sl = NormalizeDouble(MathRound(sl / TickSize) * TickSize, eDigits);
+    }
+    
+    return sl;
 }
 
 void TrailingStop()
 {
     for (int i = 0; i < OrdersTotal(); i++)
     {
-        if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES) == false)
+        if (!OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
         {
-            int Error = GetLastError();
-            string ErrorText = GetLastErrorText(Error);
-            Print("ERROR - Unable to select the order - ", Error);
-            Print("ERROR - ", ErrorText);
+            int error = GetLastError();
+            Print("ERROR - Unable to select order - ", error, ": ", GetLastErrorText(error));
             continue;
         }
-        if ((OnlyCurrentSymbol) && (OrderSymbol() != Symbol()))
-            continue;
-        if ((UseMagic) && (OrderMagicNumber() != MagicNumber))
-            continue;
-        if ((UseComment) && (StringFind(OrderComment(), CommentFilter) < 0))
-            continue;
-        if ((OnlyType != All) && (OrderType() != OnlyType))
-            continue;
-
-        double NewSL = 0;
-        double NewTP = 0;
+        
+        if (!ShouldProcessOrder()) continue;
+        
         string Instrument = OrderSymbol();
-        double SLBuy = GetStopLossBuy(Instrument);
-        double SLSell = GetStopLossSell(Instrument);
-        if ((SLBuy == 0) || (SLSell == 0))
+        double buySL = CalculateAndNormalizeSL(Instrument, OP_BUY);
+        double sellSL = CalculateAndNormalizeSL(Instrument, OP_SELL);
+        
+        if (buySL == 0 || sellSL == 0)
         {
-            Print("Not enough historical data - please load more candles for the selected timeframe.");
+            Print("Not enough historical data - please load more candles");
             return;
         }
-
+        
         int eDigits = (int)MarketInfo(Instrument, MODE_DIGITS);
-        SLBuy = NormalizeDouble(SLBuy, eDigits);
-        SLSell = NormalizeDouble(SLSell, eDigits);
-        double SLPrice = NormalizeDouble(OrderStopLoss(), eDigits);
-        double TPPrice = NormalizeDouble(OrderTakeProfit(), eDigits);
-        double Spread = MarketInfo(Instrument, MODE_SPREAD) * MarketInfo(Instrument, MODE_POINT);
-        double StopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
-        // Adjust for tick size granularity.
-        double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
-        if (TickSize > 0)
-        {
-            SLBuy = NormalizeDouble(MathRound(SLBuy / TickSize) * TickSize, eDigits);
-            SLSell = NormalizeDouble(MathRound(SLSell / TickSize) * TickSize, eDigits);
-        }
+        double currentSL = NormalizeDouble(OrderStopLoss(), eDigits);
+        double spread = MarketInfo(Instrument, MODE_SPREAD) * MarketInfo(Instrument, MODE_POINT);
+        double stopLevel = MarketInfo(Instrument, MODE_STOPLEVEL) * MarketInfo(Instrument, MODE_POINT);
         double openPrice = OrderOpenPrice();
-
-        // Check Break Even condition first
+        
+        // 先处理保本逻辑
         if (CheckBreakEvenCondition())
         {
-            double bePrice = GetBreakEvenPrice(OrderType(), openPrice, Spread);
-            // 对保本价进行Tick Size的规范化处理
+            double bePrice = GetBreakEvenPrice(OrderType(), openPrice, spread);
+            double TickSize = SymbolInfoDouble(Instrument, SYMBOL_TRADE_TICK_SIZE);
             if (TickSize > 0)
             {
                 bePrice = NormalizeDouble(MathRound(bePrice / TickSize) * TickSize, eDigits);
             }
 
-            // 验证是否需要移动止损
-            bool needToModify = (SLPrice == 0) ||
-                                (OrderType() == OP_BUY && bePrice > SLPrice) ||
-                                (OrderType() == OP_SELL && bePrice < SLPrice);
-
-            if (bePrice != 0 && needToModify)
+            // 检查是否需要更新止损
+            if ((currentSL == 0) ||
+                (OrderType() == OP_BUY && bePrice > currentSL) ||
+                (OrderType() == OP_SELL && bePrice < currentSL))
             {
-                ModifyOrder(OrderTicket(), openPrice, bePrice, TPPrice);
+                ModifyOrder(OrderTicket(), openPrice, bePrice, OrderTakeProfit());
                 continue;
             }
         }
-
-        // Regular trailing stop logic
+        
+        // 再处理常规追踪
         if (EnableTrailing)
         {
-            // 如果启用了ATR After Break Even，需要先检查是否达到保本条件
             if (EnableATRAfterBreakEven && !CheckBreakEvenCondition())
                 continue;
 
-            if ((OrderType() == OP_BUY) && (SLBuy < MarketInfo(Instrument, MODE_BID) - StopLevel))
+            double newSL = 0;
+            double tpPrice = NormalizeDouble(OrderTakeProfit(), eDigits);
+            
+            if (OrderType() == OP_BUY && buySL < MarketInfo(Instrument, MODE_BID) - stopLevel)
             {
-                NewSL = NormalizeDouble(SLBuy, eDigits);
-                NewTP = TPPrice;
-                double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                if ((SLPrice == 0) || ((NewSL > SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
+                newSL = NormalizeDouble(buySL, eDigits);
+                double pointsDiff = MathAbs(newSL - currentSL) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
+                if (currentSL == 0 || (newSL > currentSL && pointsDiff >= StopLossChangeThreshold))
                 {
-                    ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
+                    ModifyOrder(OrderTicket(), openPrice, newSL, tpPrice);
                 }
             }
-            else if ((OrderType() == OP_SELL) && (SLSell > MarketInfo(Instrument, MODE_ASK) + StopLevel))
+            else if (OrderType() == OP_SELL && sellSL > MarketInfo(Instrument, MODE_ASK) + stopLevel)
             {
-                NewSL = NormalizeDouble(SLSell + Spread, eDigits);
-                NewTP = TPPrice;
-                double PointsDiff = MathAbs(NewSL - SLPrice) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
-                if ((SLPrice == 0) || ((NewSL < SLPrice) && (PointsDiff >= StopLossChangeThreshold)))
+                newSL = NormalizeDouble(sellSL + spread, eDigits);
+                double pointsDiff = MathAbs(newSL - currentSL) / SymbolInfoDouble(Instrument, SYMBOL_POINT);
+                if (currentSL == 0 || (newSL < currentSL && pointsDiff >= StopLossChangeThreshold))
                 {
-                    ModifyOrder(OrderTicket(), OrderOpenPrice(), NewSL, NewTP);
+                    ModifyOrder(OrderTicket(), openPrice, newSL, tpPrice);
                 }
             }
         }
     }
 }
 
-void ModifyOrder(int Ticket, double OpenPrice, double SLPrice, double TPPrice)
+// 封装订单修改错误处理
+bool TryModifyOrder(int ticket, double openPrice, double slPrice, double tpPrice)
 {
-    if (OrderSelect(Ticket, SELECT_BY_TICKET) == false)
+    if (!OrderSelect(ticket, SELECT_BY_TICKET))
     {
-        int Error = GetLastError();
-        string ErrorText = GetLastErrorText(Error);
-        Print("ERROR - SELECT TICKET - error selecting order ", Ticket, " return error: ", Error);
-        return;
+        int error = GetLastError();
+        Print("ERROR - SELECT TICKET - error selecting order ", ticket, ": ", error, " - ", GetLastErrorText(error));
+        return false;
     }
-    int eDigits = (int)MarketInfo(OrderSymbol(), MODE_DIGITS);
-    SLPrice = NormalizeDouble(SLPrice, eDigits);
-    TPPrice = NormalizeDouble(TPPrice, eDigits);
+    
+    string symbol = OrderSymbol();
+    int eDigits = (int)MarketInfo(symbol, MODE_DIGITS);
+    slPrice = NormalizeDouble(slPrice, eDigits);
+    tpPrice = NormalizeDouble(tpPrice, eDigits);
+    
     for (int i = 1; i <= OrderOpRetry; i++)
     {
-        bool res = OrderModify(Ticket, OpenPrice, SLPrice, TPPrice, 0, clrBlue);
-        if (res)
+        if (OrderModify(ticket, openPrice, slPrice, tpPrice, 0, clrBlue))
         {
-            Print("TRADE - UPDATE SUCCESS - Order ", Ticket, " in ", OrderSymbol(), ": new stop-loss ", SLPrice, " new take-profit ", TPPrice);
-            NotifyStopLossUpdate(Ticket, SLPrice, OrderSymbol());
-            break;
+            Print("TRADE - UPDATE SUCCESS - Order ", ticket, " in ", symbol, ": new stop-loss ", slPrice, " new take-profit ", tpPrice);
+            NotifyStopLossUpdate(ticket, slPrice, symbol);
+            return true;
         }
         else
         {
-            int Error = GetLastError();
-            string ErrorText = GetLastErrorText(Error);
-            Print("ERROR - UPDATE FAILED - error modifying order ", Ticket, " in ", OrderSymbol(), " return error: ", Error, " Open=", OpenPrice,
-                  " Old SL=", OrderStopLoss(), " Old TP=", OrderTakeProfit(),
-                  " New SL=", SLPrice, " New TP=", TPPrice, " Bid=", MarketInfo(OrderSymbol(), MODE_BID), " Ask=", MarketInfo(OrderSymbol(), MODE_ASK));
-            Print("ERROR - ", ErrorText);
+            int error = GetLastError();
+            string errorText = GetLastErrorText(error);
+            Print("ERROR - UPDATE FAILED - error modifying order ", ticket, " in ", symbol, ": ", error,
+                  " Open=", openPrice, " Old SL=", OrderStopLoss(), " Old TP=", OrderTakeProfit(),
+                  " New SL=", slPrice, " New TP=", tpPrice,
+                  " Bid=", MarketInfo(symbol, MODE_BID), " Ask=", MarketInfo(symbol, MODE_ASK));
+            Print("ERROR - ", errorText);
         }
     }
+    return false;
+}
+
+void ModifyOrder(int Ticket, double OpenPrice, double SLPrice, double TPPrice)
+{
+    TryModifyOrder(Ticket, OpenPrice, SLPrice, TPPrice);
 }
 
 void NotifyStopLossUpdate(int OrderNumber, double SLPrice, string symbol)
@@ -318,6 +340,48 @@ string PanelBase = ExpertName + "-P-BAS";
 string PanelLabel = ExpertName + "-P-LAB";
 string PanelEnableDisable = ExpertName + "-P-ENADIS";
 string PanelBreakEven = ExpertName + "-P-BEVEN";
+// 绘制面板按钮的通用函数
+void DrawPanelButton(string objName, int &row, string text, string tooltip, bool enabled, bool locked = false)
+{
+    string buttonText = "";
+    color textColor = clrNavy;
+    color bgColor = clrKhaki;
+    
+    if (locked) {
+        buttonText = text + " LOCKED";
+        textColor = clrGray;
+        bgColor = clrLightGray;
+    }
+    else if (enabled) {
+        buttonText = text + " ENABLED";
+        textColor = clrWhite;
+        bgColor = clrDarkGreen;
+    }
+    else {
+        buttonText = text + " DISABLED";
+        textColor = clrWhite;
+        bgColor = clrDarkRed;
+    }
+    
+    DrawEdit(objName,
+             Xoff + 2,
+             Yoff + (PanelMovY + 1) * row + 2,
+             PanelLabX,
+             PanelLabY,
+             true,
+             8,
+             tooltip,
+             ALIGN_CENTER,
+             "Consolas",
+             buttonText,
+             false,
+             textColor,
+             bgColor,
+             clrBlack);
+             
+    row++;
+}
+
 void DrawPanel()
 {
     string PanelText = "MQLTA ATRTS";
@@ -354,114 +418,10 @@ void DrawPanel()
              clrKhaki,
              clrBlack);
 
-    string EnableDisabledText = "";
-    color EnableDisabledColor = clrNavy;
-    color EnableDisabledBack = clrKhaki;
-    if (EnableTrailing)
-    {
-        EnableDisabledText = "TRAILING ENABLED";
-        EnableDisabledColor = clrWhite;
-        EnableDisabledBack = clrDarkGreen;
-    }
-    else
-    {
-        EnableDisabledText = "TRAILING DISABLED";
-        EnableDisabledColor = clrWhite;
-        EnableDisabledBack = clrDarkRed;
-    }
-
-    DrawEdit(PanelEnableDisable,
-             Xoff + 2,
-             Yoff + (PanelMovY + 1) * Rows + 2,
-             PanelLabX,
-             PanelLabY,
-             true,
-             8,
-             "Click to Enable or Disable the Trailing Stop Feature",
-             ALIGN_CENTER,
-             "Consolas",
-             EnableDisabledText,
-             false,
-             EnableDisabledColor,
-             EnableDisabledBack,
-             clrBlack);
-
-    Rows++;
-
-    string BreakEvenText = "";
-    color BreakEvenColor = clrNavy;
-    color BreakEvenBack = clrKhaki;
-    if (EnableBreakEven)
-    {
-        BreakEvenText = "BREAK EVEN ENABLED";
-        BreakEvenColor = clrWhite;
-        BreakEvenBack = clrDarkGreen;
-    }
-    else
-    {
-        BreakEvenText = "BREAK EVEN DISABLED";
-        BreakEvenColor = clrWhite;
-        BreakEvenBack = clrDarkRed;
-    }
-
-    DrawEdit(PanelBreakEven,
-             Xoff + 2,
-             Yoff + (PanelMovY + 1) * Rows + 2,
-             PanelLabX,
-             PanelLabY,
-             true,
-             8,
-             "Click to Enable or Disable the Break Even Feature",
-             ALIGN_CENTER,
-             "Consolas",
-             BreakEvenText,
-             false,
-             BreakEvenColor,
-             BreakEvenBack,
-             clrBlack);
-
-    Rows++;
-
-    string ATRAfterBreakEvenText = "";
-    color ATRAfterBreakEvenColor = clrNavy;
-    color ATRAfterBreakEvenBack = clrKhaki;
-
-    if (!EnableBreakEven)
-    {
-        ATRAfterBreakEvenText = "ATR AFTER BE LOCKED";
-        ATRAfterBreakEvenColor = clrGray;
-        ATRAfterBreakEvenBack = clrLightGray;
-    }
-    else if (EnableATRAfterBreakEven)
-    {
-        ATRAfterBreakEvenText = "ATR AFTER BE ON";
-        ATRAfterBreakEvenColor = clrWhite;
-        ATRAfterBreakEvenBack = clrDarkGreen;
-    }
-    else
-    {
-        ATRAfterBreakEvenText = "ATR AFTER BE OFF";
-        ATRAfterBreakEvenColor = clrWhite;
-        ATRAfterBreakEvenBack = clrDarkRed;
-    }
-
-    DrawEdit(PanelATRAfterBreakEven,
-             Xoff + 2,
-             Yoff + (PanelMovY + 1) * Rows + 2,
-             PanelLabX,
-             PanelLabY,
-             true,
-             8,
-             "只有在达到保本条件后才启用ATR追踪止损",
-             ALIGN_CENTER,
-             "Consolas",
-             ATRAfterBreakEvenText,
-             false,
-             ATRAfterBreakEvenColor,
-             ATRAfterBreakEvenBack,
-             clrBlack);
-
-    Rows++;
+    // 使用通用函数绘制各个按钮
+    DrawPanelButton(PanelEnableDisable, Rows, "TRAILING", "Click to Enable or Disable the Trailing Stop Feature", EnableTrailing);
+    DrawPanelButton(PanelBreakEven, Rows, "BREAK EVEN", "Click to Enable or Disable the Break Even Feature", EnableBreakEven);
+    DrawPanelButton(PanelATRAfterBreakEven, Rows, "ATR AFTER BE", "只有在达到保本条件后才启用ATR追踪止损", EnableATRAfterBreakEven, !EnableBreakEven);
 
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
@@ -525,43 +485,32 @@ void ChangeATRAfterBreakEvenEnabled()
     DrawPanel();
 }
 
-double GetBreakEvenPrice(int type, double openPrice, double spread)
+// 合并保本条件检查和价格计算
+bool CheckBreakEvenCondition()
 {
-    double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0; // 佣金
-
-    // 计算保本价格
-    double bePrice = openPrice; // 默认保本价为开仓价
-    if (type == OP_BUY)
-    {
-        bePrice = openPrice + commission + spread;
-    }
-    else if (type == OP_SELL)
-    {
-        bePrice = openPrice - commission - spread;
-    }
-
-    return bePrice;
-}
-
-double GetSelectedOrderProfit()
-{
+    if (!EnableBreakEven) return false;
+    
     string symbol = OrderSymbol();
     double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
     double orderProfit = OrderProfit();
     double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
-
+    
     double profit = orderProfit - spread;
     if (ConsiderCommissionInBreakEven)
         profit -= commission;
-
-    return profit;
+    
+    return (profit >= ProfitForBreakEven);
 }
 
-bool CheckBreakEvenCondition()
+double GetBreakEvenPrice(int type, double openPrice, double spread)
 {
-    if (!EnableBreakEven)
-        return false;
-
-    return (GetSelectedOrderProfit() >= ProfitForBreakEven);
+    double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
+    
+    if (type == OP_BUY)
+        return openPrice + commission + spread;
+    else if (type == OP_SELL)
+        return openPrice - commission - spread;
+    
+    return openPrice;
 }
 //+------------------------------------------------------------------+
