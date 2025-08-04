@@ -334,7 +334,6 @@ void ProcessSingleOrder()
     if (EnableBreakEven && CheckBreakEvenCondition())
     {
         ProcessBreakEven(market);
-        return; // 保本处理完成后直接返回，不再进行追踪止损
     }
 
     // 处理ATR追踪止损
