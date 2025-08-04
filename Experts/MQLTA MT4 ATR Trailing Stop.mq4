@@ -43,7 +43,7 @@ input string Comment_1 = "====================";  // Expert Advisor Settings
 input int ATRPeriod = 14;                         // ATR Period
 input int Shift = 1;                              // Shift In The ATR Value (1=Previous Candle)
 input double ATRMultiplier = 1.0;                 // ATR Multiplier
-input int StopLossChangeThreshold = 100;          // Minimum Points To Move Stop Loss
+input int StopLossChangeThreshold = 50;           // Minimum Points To Move Stop Loss
 input string Comment_2 = "====================";  // Orders Filtering Options
 input bool OnlyCurrentSymbol = true;              // Apply To Current Symbol Only
 input ENUM_CONSIDER OnlyType = All;               // Apply To
@@ -52,9 +52,9 @@ input int MagicNumber = 0;                        // Magic Number (if above is t
 input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
 input bool EnableTrailingParam = false;           // Enable Trailing Stop
-input bool EnableBreakEvenParam = true;           // Enable Break Even
+input bool EnableBreakEvenParam = false;          // Enable Break Even
 input bool EnableATRAfterBreakEvenParam = false;  // Enable ATR After Break Even
-input double ProfitForBreakEven = 5.25;           // Pips Required for Break Even
+input int pipsForBreakEven = 500;                 // Pips Required for Break Even
 input bool ConsiderCommissionInBreakEven = false; // Consider Commission in Break Even
 input string Comment_3 = "====================";  // Notification Options
 input bool EnableNotify = false;                  // Enable Notifications feature
@@ -572,7 +572,7 @@ void ChangeATRAfterBreakEvenEnabled()
 
 /*
  * CheckBreakEvenCondition: 检查当前订单是否达到保本条件
- * 直接计算利润并与设定值比较，避免中间函数调用
+ * 正确计算利润和佣金对应的点数
  */
 bool CheckBreakEvenCondition()
 {
@@ -580,39 +580,76 @@ bool CheckBreakEvenCondition()
         return false;
 
     string symbol = OrderSymbol();
-    double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
-    double spread = MarketInfo(symbol, MODE_SPREAD) * MarketInfo(symbol, MODE_POINT);
+    double point = MarketInfo(symbol, MODE_POINT);
+    double tickValue = MarketInfo(symbol, MODE_TICKVALUE);
+    double tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+    double lots = OrderLots();
+    int digits = (int)MarketInfo(OrderSymbol(), MODE_DIGITS);
 
-    // 直接计算净利润
-    double netProfit = OrderProfit() - spread;
-    if (ConsiderCommissionInBreakEven)
-        netProfit -= commission;
+    // 计算每点价值（账户货币/点）
+    double valuePerPoint = (tickSize > 0) ? tickValue * (point / tickSize) : tickValue;
 
-    return (netProfit >= ProfitForBreakEven);
+    // 计算利润点数
+    double profitPoints = (valuePerPoint > 0 && lots > 0) ? OrderProfit() / (valuePerPoint * lots) : 0;
+
+    // 计算佣金点数
+    double commissionPoints = 0;
+    if (ConsiderCommissionInBreakEven && valuePerPoint > 0 && lots > 0)
+    {
+        commissionPoints = MathAbs(OrderCommission()) / (valuePerPoint * lots);
+    }
+
+    // 点差本身就是点数
+    double spreadPoints = MarketInfo(symbol, MODE_SPREAD);
+
+    // 计算净利润点数
+    double netProfitPoints = NormalizeDouble((profitPoints - spreadPoints - commissionPoints), digits);
+
+    return (netProfitPoints >= pipsForBreakEven);
 }
 
 /*
  * GetBreakEvenPrice: 计算保本价格（Break Even Price）
  *
  * 保本价格是订单达到盈亏平衡点（不赚不赔）的价格水平：
- * - 对于买单：开仓价 + 佣金 + 点差
- * - 对于卖单：开仓价 - 佣金 - 点差
+ * - 对于买单：开仓价 + 点差 + 佣金对应的价格调整量
+ * - 对于卖单：开仓价 - 点差 - 佣金对应的价格调整量
+ *
+ * 佣金调整量 = (总佣金 / (TickValue * 手数)) * Point
  *
  * 参数：
  *   type: 订单类型 (OP_BUY/OP_SELL)
  *   openPrice: 开仓价格
- *   spread: 点差成本
+ *   spread: 点差成本（价格值）
  *
  * 返回：计算出的保本价格
  */
 double GetBreakEvenPrice(int type, double openPrice, double spread)
 {
     double commission = ConsiderCommissionInBreakEven ? MathAbs(OrderCommission()) : 0;
+    double commissionAdjustment = 0;
+    int digits = (int)MarketInfo(OrderSymbol(), MODE_DIGITS);
+
+    if (commission > 0)
+    {
+        string symbol = OrderSymbol();
+        double tickValue = MarketInfo(symbol, MODE_TICKVALUE);
+        double point = MarketInfo(symbol, MODE_POINT);
+        double lots = OrderLots();
+
+        if (tickValue > 0 && lots > 0)
+        {
+            // 计算佣金对应的点数
+            double commissionPoints = commission / (tickValue * lots);
+            // 转换为价格调整量
+            commissionAdjustment = commissionPoints * point;
+        }
+    }
 
     if (type == OP_BUY)
-        return openPrice + commission + spread; // 买单需要价格上涨覆盖成本
+        return NormalizeDouble((openPrice + spread + commissionAdjustment), digits); // 买单需要覆盖点差和佣金
     else if (type == OP_SELL)
-        return openPrice - commission - spread; // 卖单需要价格下跌覆盖成本
+        return NormalizeDouble((openPrice - spread - commissionAdjustment), digits); // 卖单需要覆盖点差和佣金
 
     return openPrice; // 未知订单类型返回开仓价
 }
