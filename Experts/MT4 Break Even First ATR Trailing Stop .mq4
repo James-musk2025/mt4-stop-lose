@@ -51,10 +51,10 @@ input bool UseMagic = false;                      // Filter By Magic Number
 input int MagicNumber = 0;                        // Magic Number (if above is true)
 input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
-input bool EnableTrailingParam = false;           // Enable Trailing Stop
-input bool EnableBreakEvenParam = false;          // Enable Break Even
+input bool EnableTrailingParam = true;           // Enable Trailing Stop
+input bool EnableBreakEvenParam = true;          // Enable Break Even
 input bool EnableATRAfterBreakEvenParam = false;  // Enable ATR After Break Even
-input int pipsForBreakEven = 500;                 // Pips Required for Break Even
+input int pipsForBreakEven = 300;                 // Pips Required for Break Even
 input bool ConsiderCommissionInBreakEven = false; // Consider Commission in Break Even
 input string Comment_3 = "====================";  // Notification Options
 input bool EnableNotify = false;                  // Enable Notifications feature
