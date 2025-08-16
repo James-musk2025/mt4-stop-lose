@@ -69,6 +69,12 @@ input bool ShowPanel = true;                      // Show Graphical Panel
 input string ExpertName = "MQLTA-ATRTS";          // Expert Name (to name the objects)
 input int Xoff = 20;                              // Horizontal spacing for the control panel
 input int Yoff = 20;                              // Vertical spacing for the control panel
+input string Comment_4 = "====================";  // ATR Stop Line Display
+input bool ShowATRStopLine = true;                // Show ATR Stop Line
+input int ATRStopLineOrderTicket = 0;             // Order Ticket (0=First Order)
+input color ATRStopLineColor = clrRed;            // Line Color
+input int ATRStopLineWidth = 1;                  // Line Width
+input ENUM_LINE_STYLE ATRStopLineStyle = STYLE_SOLID; // Line Style
 
 int OrderOpRetry = DEFAULT_RETRY_COUNT;
 bool EnableTrailing = EnableTrailingParam;
@@ -77,8 +83,10 @@ double DPIScale; // Scaling parameter for the panel based on the screen DPI.
 int PanelMovX, PanelMovY, PanelLabX, PanelLabY, PanelRecX;
 bool EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
 bool EnableTakeProfit = EnableTakeProfitParam;
+bool CurrentShowATRStopLine = ShowATRStopLine; // 当前显示状态
 string PanelATRAfterBreakEven = ExpertName + "-P-ATRBE";
 string PanelTakeProfit = ExpertName + "-P-TP";
+string PanelATRStopLine = ExpertName + "-P-ATRSTOPLINE"; // 新增ATR止损线按钮
 
 struct mMarketInfo
 {
@@ -86,6 +94,7 @@ struct mMarketInfo
     double bid, ask, point, spread, stopLevel;
     int digits;
     double tickSize;
+    double atrStopPrice; // 添加ATR止损价格字段
 
     void Update(string sym)
     {
@@ -116,6 +125,13 @@ int OnInit()
 
     if (ShowPanel)
         DrawPanel();
+        
+    // 初始化ATR止损线对象
+    if (CurrentShowATRStopLine)
+        CreateATRStopLine();
+        
+    // 关闭MT4默认订单显示
+    ObjectSetInteger(0, "Order", OBJPROP_HIDDEN, true);
 
     return INIT_SUCCEEDED;
 }
@@ -123,6 +139,9 @@ int OnInit()
 void OnDeinit(const int reason)
 {
     CleanPanel();
+    // 删除ATR止损线对象
+    if (CurrentShowATRStopLine)
+        DeleteATRStopLine();
 }
 
 void OnTick()
@@ -131,6 +150,10 @@ void OnTick()
         TrailingStop();
     if (ShowPanel)
         DrawPanel();
+        
+    // 更新ATR止损线位置
+    if (CurrentShowATRStopLine)
+        UpdateATRStopLine();
 }
 
 void OnChartEvent(const int id,
@@ -168,6 +191,10 @@ void HandlePanelClick(const string &objectName)
     else if (objectName == PanelTakeProfit)
     {
         ChangeTakeProfitEnabled();
+    }
+    else if (objectName == PanelATRStopLine)
+    {
+        ChangeATRStopLineEnabled();
     }
 }
 
@@ -512,6 +539,7 @@ void DrawPanel()
     DrawPanelButton(PanelBreakEven, Rows, "BREAK EVEN", "Click to Enable or Disable the Break Even Feature", EnableBreakEven);
     DrawPanelButton(PanelATRAfterBreakEven, Rows, "ATR AFTER BE", "只有在达到保本条件后才启用ATR追踪止损", EnableATRAfterBreakEven, !EnableBreakEven || !EnableTrailing);
     DrawPanelButton(PanelTakeProfit, Rows, "TAKE PROFIT", "Click to Enable or Disable Take Profit Feature", EnableTakeProfit);
+    DrawPanelButton(PanelATRStopLine, Rows, "ATR STOP LINE", "点击切换ATR止损线显示状态", CurrentShowATRStopLine);
 
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
@@ -519,6 +547,77 @@ void DrawPanel()
 void CleanPanel()
 {
     ObjectsDeleteAll(0, ExpertName + "-P-");
+}
+
+// 创建ATR止损线对象
+void CreateATRStopLine()
+{
+    string lineName = ExpertName + "-ATRStopLine";
+    ObjectCreate(0, lineName, OBJ_HLINE, 0, 0, 0);
+    ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRStopLineColor);
+    ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
+    ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
+    ObjectSetInteger(0, lineName, OBJPROP_BACK, true);
+    ObjectSetInteger(0, lineName, OBJPROP_SELECTABLE, false);
+}
+
+// 删除ATR止损线对象
+void DeleteATRStopLine()
+{
+    string lineName = ExpertName + "-ATRStopLine";
+    ObjectDelete(0, lineName);
+}
+
+// 更新ATR止损线位置
+void UpdateATRStopLine()
+{
+    string lineName = ExpertName + "-ATRStopLine";
+    double stopPrice = GetATRStopPriceForDisplay();
+    
+    if (stopPrice > 0)
+    {
+        ObjectSetDouble(0, lineName, OBJPROP_PRICE, stopPrice);
+        ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRStopLineColor);
+        ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
+        ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
+    }
+    else
+    {
+        // 没有有效订单时隐藏线
+        ObjectSetDouble(0, lineName, OBJPROP_PRICE, 0);
+    }
+}
+
+// 获取要显示的ATR止损价格
+double GetATRStopPriceForDisplay()
+{
+    int targetTicket = ATRStopLineOrderTicket;
+    bool found = false;
+    double stopPrice = 0;
+    
+    // 查找指定订单
+    for (int i = 0; i < OrdersTotal(); i++)
+    {
+        if (!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+        
+        // 如果指定了ticket且匹配，或者未指定ticket且是第一个订单
+        if ((targetTicket > 0 && OrderTicket() == targetTicket) ||
+            (targetTicket == 0 && !found))
+        {
+            mMarketInfo market;
+            market.Update(OrderSymbol());
+            
+            if (OrderType() == OP_BUY)
+                stopPrice = CalculateAndNormalizeSL(OrderSymbol(), OP_BUY);
+            else if (OrderType() == OP_SELL)
+                stopPrice = CalculateAndNormalizeSL(OrderSymbol(), OP_SELL);
+            
+            found = true;
+            if (targetTicket > 0) break; // 找到指定订单后退出
+        }
+    }
+    
+    return stopPrice;
 }
 
 void ChangeTrailingEnabled()
@@ -595,6 +694,22 @@ void ChangeTakeProfitEnabled()
     else
         EnableTakeProfit = false;
     DrawPanel();
+}
+
+// 切换ATR止损线显示状态
+void ChangeATRStopLineEnabled()
+{
+    if (CurrentShowATRStopLine == false)
+    {
+        CurrentShowATRStopLine = true;
+        CreateATRStopLine(); // 创建止损线对象
+    }
+    else
+    {
+        CurrentShowATRStopLine = false;
+        DeleteATRStopLine(); // 删除止损线对象
+    }
+    DrawPanel(); // 更新面板显示
 }
 
 /*
