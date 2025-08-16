@@ -686,10 +686,29 @@ void ProcessTakeProfit(mMarketInfo &market)
     double currentTP = NormalizeDouble(OrderTakeProfit(), market.digits);
     double newTP = CalculateTakeProfitPrice(OrderType(), OrderOpenPrice(), market);
     
+    // 规范化价格
+    newTP = NormalizeDouble(newTP, market.digits);
+    
+    // 验证止盈价有效性
+    bool validTP = false;
+    if (OrderType() == OP_BUY)
+    {
+        validTP = (newTP > market.ask + market.stopLevel);
+    }
+    else if (OrderType() == OP_SELL)
+    {
+        validTP = (newTP < market.bid - market.stopLevel);
+    }
+    
     // 检查是否需要更新止盈
-    if (currentTP == 0 || MathAbs(newTP - currentTP) / market.point >= StopLossChangeThreshold)
+    if (validTP && (currentTP == 0 || MathAbs(newTP - currentTP) / market.point >= StopLossChangeThreshold))
     {
         ModifyOrder(OrderTicket(), OrderOpenPrice(), OrderStopLoss(), newTP);
+    }
+    else if (!validTP)
+    {
+        Print("WARNING: Invalid TakeProfit price ", newTP, " for ", OrderTypeToString(OrderType()),
+              " order. Ask=", market.ask, " Bid=", market.bid, " StopLevel=", market.stopLevel);
     }
 }
 
@@ -701,6 +720,20 @@ double CalculateTakeProfitPrice(int orderType, double openPrice, mMarketInfo &ma
     else if (orderType == OP_SELL)
         return openPrice - TakeProfitPips * market.point;
     return 0;
+}
+
+string OrderTypeToString(int type)
+{
+    switch(type)
+    {
+        case OP_BUY: return "BUY";
+        case OP_SELL: return "SELL";
+        case OP_BUYLIMIT: return "BUY LIMIT";
+        case OP_SELLLIMIT: return "SELL LIMIT";
+        case OP_BUYSTOP: return "BUY STOP";
+        case OP_SELLSTOP: return "SELL STOP";
+        default: return "UNKNOWN";
+    }
 }
 
 //+------------------------------------------------------------------+
