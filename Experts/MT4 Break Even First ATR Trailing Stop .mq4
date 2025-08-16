@@ -39,41 +39,41 @@ enum ENUM_CUSTOMTIMEFRAMES
     MN1 = PERIOD_MN1,         // MN1
 };
 
-input string Comment_1 = "====================";  // Expert Advisor Settings
-input int ATRPeriod = 14;                         // ATR Period
-input int Shift = 1;                              // Shift In The ATR Value (1=Previous Candle)
-input double ATRMultiplier = 3.0;                 // ATR Multiplier
-input int StopLossChangeThreshold = 50;           // Minimum Points To Move Stop Loss
-input string Comment_2 = "====================";  // Orders Filtering Options
-input bool OnlyCurrentSymbol = true;              // Apply To Current Symbol Only
-input ENUM_CONSIDER OnlyType = All;               // Apply To
-input bool UseMagic = false;                      // Filter By Magic Number
-input int MagicNumber = 0;                        // Magic Number (if above is true)
-input bool UseComment = false;                    // Filter By Comment
-input string CommentFilter = "";                  // Comment (if above is true)
-input bool EnableTrailingParam = true;            // Enable Trailing Stop
-input bool EnableBreakEvenParam = true;           // Enable Break Even
-input bool EnableATRAfterBreakEvenParam = false;  // Enable ATR After Break Even
-input int pipsForBreakEven = 500;                 // Pips Required for Break Even
-input bool ConsiderCommissionInBreakEven = false; // Consider Commission in Break Even
-input string Comment_3 = "====================";  // Take Profit Options
-input bool EnableTakeProfitParam = true;         // Enable Take Profit
-input int TakeProfitPips = 2000;                   // Take Profit Pips
-input string Comment_3a = "====================";  // Notification Options
-input bool EnableNotify = false;                  // Enable Notifications feature
-input bool SendAlert = true;                      // Send Alert Notification
-input bool SendApp = true;                        // Send Notification to Mobile
-input bool SendEmail = true;                      // Send Notification via Email
-input string Comment_3b = "===================="; // Graphical Window
-input bool ShowPanel = true;                      // Show Graphical Panel
-input string ExpertName = "MQLTA-ATRTS";          // Expert Name (to name the objects)
-input int Xoff = 20;                              // Horizontal spacing for the control panel
-input int Yoff = 20;                              // Vertical spacing for the control panel
-input string Comment_4 = "====================";  // ATR Stop Line Display
-input bool ShowATRStopLine = true;                // Show ATR Stop Line
-input int ATRStopLineOrderTicket = 0;             // Order Ticket (0=First Order)
-input color ATRStopLineColor = clrRed;            // Line Color
-input int ATRStopLineWidth = 1;                  // Line Width
+input string Comment_1 = "====================";      // Expert Advisor Settings
+input int ATRPeriod = 14;                             // ATR Period
+input int Shift = 1;                                  // Shift In The ATR Value (1=Previous Candle)
+input double ATRMultiplier = 3.0;                     // ATR Multiplier
+input int StopLossChangeThreshold = 50;               // Minimum Points To Move Stop Loss
+input string Comment_2 = "====================";      // Orders Filtering Options
+input bool OnlyCurrentSymbol = true;                  // Apply To Current Symbol Only
+input ENUM_CONSIDER OnlyType = All;                   // Apply To
+input bool UseMagic = false;                          // Filter By Magic Number
+input int MagicNumber = 0;                            // Magic Number (if above is true)
+input bool UseComment = false;                        // Filter By Comment
+input string CommentFilter = "";                      // Comment (if above is true)
+input bool EnableTrailingParam = true;                // Enable Trailing Stop
+input bool EnableBreakEvenParam = true;               // Enable Break Even
+input bool EnableATRAfterBreakEvenParam = false;      // Enable ATR After Break Even
+input int pipsForBreakEven = 500;                     // Pips Required for Break Even
+input bool ConsiderCommissionInBreakEven = false;     // Consider Commission in Break Even
+input string Comment_3 = "====================";      // Take Profit Options
+input bool EnableTakeProfitParam = true;              // Enable Take Profit
+input int TakeProfitPips = 2000;                      // Take Profit Pips
+input string Comment_3a = "====================";     // Notification Options
+input bool EnableNotify = false;                      // Enable Notifications feature
+input bool SendAlert = true;                          // Send Alert Notification
+input bool SendApp = true;                            // Send Notification to Mobile
+input bool SendEmail = true;                          // Send Notification via Email
+input string Comment_3b = "====================";     // Graphical Window
+input bool ShowPanel = true;                          // Show Graphical Panel
+input string ExpertName = "MQLTA-ATRTS";              // Expert Name (to name the objects)
+input int Xoff = 20;                                  // Horizontal spacing for the control panel
+input int Yoff = 20;                                  // Vertical spacing for the control panel
+input string Comment_4 = "====================";      // ATR Stop Line Display
+input bool ShowATRStopLine = true;                    // Show ATR Stop Line
+input color ATRSelltopLineColor = clrHotPink;       // Line Color
+input color ATRBuyStopLineColor = clrBlue;          // Line Color
+input int ATRStopLineWidth = 1;                       // Line Width
 input ENUM_LINE_STYLE ATRStopLineStyle = STYLE_SOLID; // Line Style
 
 int OrderOpRetry = DEFAULT_RETRY_COUNT;
@@ -94,7 +94,8 @@ struct mMarketInfo
     double bid, ask, point, spread, stopLevel;
     int digits;
     double tickSize;
-    double atrStopPrice; // 添加ATR止损价格字段
+    double buyATRStopPrice;  // Buy方向的ATR止损价格
+    double sellATRStopPrice; // Sell方向的ATR止损价格
 
     void Update(string sym)
     {
@@ -106,6 +107,11 @@ struct mMarketInfo
         stopLevel = MarketInfo(symbol, MODE_STOPLEVEL) * point;
         digits = (int)MarketInfo(symbol, MODE_DIGITS);
         tickSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+
+        // 计算Buy和Sell的ATR止损价格
+        double atrValue = iATR(symbol, PERIOD_CURRENT, ATRPeriod, Shift) * ATRMultiplier;
+        buyATRStopPrice = bid - atrValue;
+        sellATRStopPrice = ask + atrValue;
     }
 };
 
@@ -125,11 +131,14 @@ int OnInit()
 
     if (ShowPanel)
         DrawPanel();
-        
+
     // 初始化ATR止损线对象
     if (CurrentShowATRStopLine)
-        CreateATRStopLine();
-        
+    {
+        CreateBuyATRStopLine();
+        CreateSellATRStopLine();
+    }
+
     // 关闭MT4默认订单显示
     ObjectSetInteger(0, "Order", OBJPROP_HIDDEN, true);
 
@@ -141,7 +150,10 @@ void OnDeinit(const int reason)
     CleanPanel();
     // 删除ATR止损线对象
     if (CurrentShowATRStopLine)
-        DeleteATRStopLine();
+    {
+        DeleteBuyATRStopLine();
+        DeleteSellATRStopLine();
+    }
 }
 
 void OnTick()
@@ -150,10 +162,13 @@ void OnTick()
         TrailingStop();
     if (ShowPanel)
         DrawPanel();
-        
+
     // 更新ATR止损线位置
     if (CurrentShowATRStopLine)
-        UpdateATRStopLine();
+    {
+        UpdateBuyATRStopLine();
+        UpdateSellATRStopLine();
+    }
 }
 
 void OnChartEvent(const int id,
@@ -373,7 +388,7 @@ void ProcessSingleOrder()
     {
         ProcessTrailing(market);
     }
-    
+
     // 处理止盈
     if (EnableTakeProfit)
     {
@@ -539,7 +554,7 @@ void DrawPanel()
     DrawPanelButton(PanelBreakEven, Rows, "BREAK EVEN", "Click to Enable or Disable the Break Even Feature", EnableBreakEven);
     DrawPanelButton(PanelATRAfterBreakEven, Rows, "ATR AFTER BE", "只有在达到保本条件后才启用ATR追踪止损", EnableATRAfterBreakEven, !EnableBreakEven || !EnableTrailing);
     DrawPanelButton(PanelTakeProfit, Rows, "TAKE PROFIT", "Click to Enable or Disable Take Profit Feature", EnableTakeProfit);
-    DrawPanelButton(PanelATRStopLine, Rows, "ATR STOP LINE", "点击切换ATR止损线显示状态", CurrentShowATRStopLine);
+    DrawPanelButton(PanelATRStopLine, Rows, "ATR STOP LINES", "点击切换Buy/Sell ATR止损线显示状态", CurrentShowATRStopLine);
 
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
@@ -549,75 +564,68 @@ void CleanPanel()
     ObjectsDeleteAll(0, ExpertName + "-P-");
 }
 
-// 创建ATR止损线对象
-void CreateATRStopLine()
+// 创建Buy方向ATR止损线
+void CreateBuyATRStopLine()
 {
-    string lineName = ExpertName + "-ATRStopLine";
+    string lineName = ExpertName + "-BuyATRStopLine";
     ObjectCreate(0, lineName, OBJ_HLINE, 0, 0, 0);
-    ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRStopLineColor);
+    ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRBuyStopLineColor);
     ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
     ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
     ObjectSetInteger(0, lineName, OBJPROP_BACK, true);
     ObjectSetInteger(0, lineName, OBJPROP_SELECTABLE, false);
 }
 
-// 删除ATR止损线对象
-void DeleteATRStopLine()
+// 创建Sell方向ATR止损线
+void CreateSellATRStopLine()
 {
-    string lineName = ExpertName + "-ATRStopLine";
+    string lineName = ExpertName + "-SellATRStopLine";
+    ObjectCreate(0, lineName, OBJ_HLINE, 0, 0, 0);
+    ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRSelltopLineColor);
+    ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
+    ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
+    ObjectSetInteger(0, lineName, OBJPROP_BACK, true);
+    ObjectSetInteger(0, lineName, OBJPROP_SELECTABLE, false);
+}
+
+// 删除Buy方向ATR止损线
+void DeleteBuyATRStopLine()
+{
+    string lineName = ExpertName + "-BuyATRStopLine";
     ObjectDelete(0, lineName);
 }
 
-// 更新ATR止损线位置
-void UpdateATRStopLine()
+// 删除Sell方向ATR止损线
+void DeleteSellATRStopLine()
 {
-    string lineName = ExpertName + "-ATRStopLine";
-    double stopPrice = GetATRStopPriceForDisplay();
-    
-    if (stopPrice > 0)
-    {
-        ObjectSetDouble(0, lineName, OBJPROP_PRICE, stopPrice);
-        ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRStopLineColor);
-        ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
-        ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
-    }
-    else
-    {
-        // 没有有效订单时隐藏线
-        ObjectSetDouble(0, lineName, OBJPROP_PRICE, 0);
-    }
+    string lineName = ExpertName + "-SellATRStopLine";
+    ObjectDelete(0, lineName);
 }
 
-// 获取要显示的ATR止损价格
-double GetATRStopPriceForDisplay()
+// 更新Buy方向ATR止损线位置
+void UpdateBuyATRStopLine()
 {
-    int targetTicket = ATRStopLineOrderTicket;
-    bool found = false;
-    double stopPrice = 0;
-    
-    // 查找指定订单
-    for (int i = 0; i < OrdersTotal(); i++)
-    {
-        if (!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
-        
-        // 如果指定了ticket且匹配，或者未指定ticket且是第一个订单
-        if ((targetTicket > 0 && OrderTicket() == targetTicket) ||
-            (targetTicket == 0 && !found))
-        {
-            mMarketInfo market;
-            market.Update(OrderSymbol());
-            
-            if (OrderType() == OP_BUY)
-                stopPrice = CalculateAndNormalizeSL(OrderSymbol(), OP_BUY);
-            else if (OrderType() == OP_SELL)
-                stopPrice = CalculateAndNormalizeSL(OrderSymbol(), OP_SELL);
-            
-            found = true;
-            if (targetTicket > 0) break; // 找到指定订单后退出
-        }
-    }
-    
-    return stopPrice;
+    mMarketInfo market;
+    market.Update(Symbol());
+
+    string lineName = ExpertName + "-BuyATRStopLine";
+    ObjectSetDouble(0, lineName, OBJPROP_PRICE, market.buyATRStopPrice);
+    ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRBuyStopLineColor);
+    ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
+    ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
+}
+
+// 更新Sell方向ATR止损线位置
+void UpdateSellATRStopLine()
+{
+    mMarketInfo market;
+    market.Update(Symbol());
+
+    string lineName = ExpertName + "-SellATRStopLine";
+    ObjectSetDouble(0, lineName, OBJPROP_PRICE, market.sellATRStopPrice);
+    ObjectSetInteger(0, lineName, OBJPROP_COLOR, ATRSelltopLineColor);
+    ObjectSetInteger(0, lineName, OBJPROP_WIDTH, ATRStopLineWidth);
+    ObjectSetInteger(0, lineName, OBJPROP_STYLE, ATRStopLineStyle);
 }
 
 void ChangeTrailingEnabled()
@@ -702,12 +710,14 @@ void ChangeATRStopLineEnabled()
     if (CurrentShowATRStopLine == false)
     {
         CurrentShowATRStopLine = true;
-        CreateATRStopLine(); // 创建止损线对象
+        CreateBuyATRStopLine();  // 创建Buy止损线
+        CreateSellATRStopLine(); // 创建Sell止损线
     }
     else
     {
         CurrentShowATRStopLine = false;
-        DeleteATRStopLine(); // 删除止损线对象
+        DeleteBuyATRStopLine();  // 删除Buy止损线
+        DeleteSellATRStopLine(); // 删除Sell止损线
     }
     DrawPanel(); // 更新面板显示
 }
@@ -800,10 +810,10 @@ void ProcessTakeProfit(mMarketInfo &market)
 {
     double currentTP = NormalizeDouble(OrderTakeProfit(), market.digits);
     double newTP = CalculateTakeProfitPrice(OrderType(), OrderOpenPrice(), market);
-    
+
     // 规范化价格
     newTP = NormalizeDouble(newTP, market.digits);
-    
+
     // 验证止盈价有效性
     bool validTP = false;
     if (OrderType() == OP_BUY)
@@ -814,7 +824,7 @@ void ProcessTakeProfit(mMarketInfo &market)
     {
         validTP = (newTP < market.bid - market.stopLevel);
     }
-    
+
     // 检查是否需要更新止盈
     if (validTP && (currentTP == 0 || MathAbs(newTP - currentTP) / market.point >= StopLossChangeThreshold))
     {
@@ -839,15 +849,22 @@ double CalculateTakeProfitPrice(int orderType, double openPrice, mMarketInfo &ma
 
 string OrderTypeToString(int type)
 {
-    switch(type)
+    switch (type)
     {
-        case OP_BUY: return "BUY";
-        case OP_SELL: return "SELL";
-        case OP_BUYLIMIT: return "BUY LIMIT";
-        case OP_SELLLIMIT: return "SELL LIMIT";
-        case OP_BUYSTOP: return "BUY STOP";
-        case OP_SELLSTOP: return "SELL STOP";
-        default: return "UNKNOWN";
+    case OP_BUY:
+        return "BUY";
+    case OP_SELL:
+        return "SELL";
+    case OP_BUYLIMIT:
+        return "BUY LIMIT";
+    case OP_SELLLIMIT:
+        return "SELL LIMIT";
+    case OP_BUYSTOP:
+        return "BUY STOP";
+    case OP_SELLSTOP:
+        return "SELL STOP";
+    default:
+        return "UNKNOWN";
     }
 }
 
