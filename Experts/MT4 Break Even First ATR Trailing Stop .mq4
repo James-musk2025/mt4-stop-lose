@@ -42,7 +42,7 @@ enum ENUM_CUSTOMTIMEFRAMES
 input string Comment_1 = "====================";  // Expert Advisor Settings
 input int ATRPeriod = 14;                         // ATR Period
 input int Shift = 1;                              // Shift In The ATR Value (1=Previous Candle)
-input double ATRMultiplier = 1.0;                 // ATR Multiplier
+input double ATRMultiplier = 3.0;                 // ATR Multiplier
 input int StopLossChangeThreshold = 50;           // Minimum Points To Move Stop Loss
 input string Comment_2 = "====================";  // Orders Filtering Options
 input bool OnlyCurrentSymbol = true;              // Apply To Current Symbol Only
@@ -51,17 +51,20 @@ input bool UseMagic = false;                      // Filter By Magic Number
 input int MagicNumber = 0;                        // Magic Number (if above is true)
 input bool UseComment = false;                    // Filter By Comment
 input string CommentFilter = "";                  // Comment (if above is true)
-input bool EnableTrailingParam = true;           // Enable Trailing Stop
-input bool EnableBreakEvenParam = true;          // Enable Break Even
+input bool EnableTrailingParam = true;            // Enable Trailing Stop
+input bool EnableBreakEvenParam = true;           // Enable Break Even
 input bool EnableATRAfterBreakEvenParam = false;  // Enable ATR After Break Even
-input int pipsForBreakEven = 300;                 // Pips Required for Break Even
+input int pipsForBreakEven = 500;                 // Pips Required for Break Even
 input bool ConsiderCommissionInBreakEven = false; // Consider Commission in Break Even
-input string Comment_3 = "====================";  // Notification Options
+input string Comment_3 = "====================";  // Take Profit Options
+input bool EnableTakeProfitParam = true;         // Enable Take Profit
+input int TakeProfitPips = 2000;                   // Take Profit Pips
+input string Comment_3a = "====================";  // Notification Options
 input bool EnableNotify = false;                  // Enable Notifications feature
 input bool SendAlert = true;                      // Send Alert Notification
 input bool SendApp = true;                        // Send Notification to Mobile
 input bool SendEmail = true;                      // Send Notification via Email
-input string Comment_3a = "===================="; // Graphical Window
+input string Comment_3b = "===================="; // Graphical Window
 input bool ShowPanel = true;                      // Show Graphical Panel
 input string ExpertName = "MQLTA-ATRTS";          // Expert Name (to name the objects)
 input int Xoff = 20;                              // Horizontal spacing for the control panel
@@ -73,7 +76,9 @@ bool EnableBreakEven = EnableBreakEvenParam;
 double DPIScale; // Scaling parameter for the panel based on the screen DPI.
 int PanelMovX, PanelMovY, PanelLabX, PanelLabY, PanelRecX;
 bool EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
+bool EnableTakeProfit = EnableTakeProfitParam;
 string PanelATRAfterBreakEven = ExpertName + "-P-ATRBE";
+string PanelTakeProfit = ExpertName + "-P-TP";
 
 struct mMarketInfo
 {
@@ -122,7 +127,7 @@ void OnDeinit(const int reason)
 
 void OnTick()
 {
-    if (EnableTrailing || EnableBreakEven) // 检查是否启用了任一功能
+    if (EnableTrailing || EnableBreakEven || EnableTakeProfit) // 检查是否启用了任一功能
         TrailingStop();
     if (ShowPanel)
         DrawPanel();
@@ -159,6 +164,10 @@ void HandlePanelClick(const string &objectName)
     else if (objectName == PanelATRAfterBreakEven)
     {
         ChangeATRAfterBreakEvenEnabled();
+    }
+    else if (objectName == PanelTakeProfit)
+    {
+        ChangeTakeProfitEnabled();
     }
 }
 
@@ -237,10 +246,6 @@ void TrailingStop()
         {
             // 处理单个订单
             ProcessSingleOrder();
-        }
-        else
-        {
-            Print("Skipping order at index ", i, " due to validation failure.");
         }
     }
 }
@@ -340,6 +345,12 @@ void ProcessSingleOrder()
     if (EnableTrailing)
     {
         ProcessTrailing(market);
+    }
+    
+    // 处理止盈
+    if (EnableTakeProfit)
+    {
+        ProcessTakeProfit(market);
     }
 }
 
@@ -500,6 +511,7 @@ void DrawPanel()
     DrawPanelButton(PanelEnableDisable, Rows, "TRAILING", "Click to Enable or Disable the Trailing Stop Feature", EnableTrailing);
     DrawPanelButton(PanelBreakEven, Rows, "BREAK EVEN", "Click to Enable or Disable the Break Even Feature", EnableBreakEven);
     DrawPanelButton(PanelATRAfterBreakEven, Rows, "ATR AFTER BE", "只有在达到保本条件后才启用ATR追踪止损", EnableATRAfterBreakEven, !EnableBreakEven || !EnableTrailing);
+    DrawPanelButton(PanelTakeProfit, Rows, "TAKE PROFIT", "Click to Enable or Disable Take Profit Feature", EnableTakeProfit);
 
     ObjectSetInteger(0, PanelBase, OBJPROP_YSIZE, (PanelMovY + 1) * Rows + 3);
 }
@@ -566,6 +578,22 @@ void ChangeATRAfterBreakEvenEnabled()
     }
     else
         EnableATRAfterBreakEven = false;
+    DrawPanel();
+}
+
+void ChangeTakeProfitEnabled()
+{
+    if (EnableTakeProfit == false)
+    {
+        if (IsTradeAllowed())
+            EnableTakeProfit = true;
+        else
+        {
+            MessageBox("You need to first enable Live Trading in the EA options.", "WARNING", MB_OK);
+        }
+    }
+    else
+        EnableTakeProfit = false;
     DrawPanel();
 }
 
@@ -652,4 +680,27 @@ double GetBreakEvenPrice(int type, double openPrice, double spread)
 
     return openPrice; // 未知订单类型返回开仓价
 }
+// 处理止盈逻辑
+void ProcessTakeProfit(mMarketInfo &market)
+{
+    double currentTP = NormalizeDouble(OrderTakeProfit(), market.digits);
+    double newTP = CalculateTakeProfitPrice(OrderType(), OrderOpenPrice(), market);
+    
+    // 检查是否需要更新止盈
+    if (currentTP == 0 || MathAbs(newTP - currentTP) / market.point >= StopLossChangeThreshold)
+    {
+        ModifyOrder(OrderTicket(), OrderOpenPrice(), OrderStopLoss(), newTP);
+    }
+}
+
+// 计算止盈价格
+double CalculateTakeProfitPrice(int orderType, double openPrice, mMarketInfo &market)
+{
+    if (orderType == OP_BUY)
+        return openPrice + TakeProfitPips * market.point;
+    else if (orderType == OP_SELL)
+        return openPrice - TakeProfitPips * market.point;
+    return 0;
+}
+
 //+------------------------------------------------------------------+
