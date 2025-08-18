@@ -120,6 +120,7 @@ int OnInit()
     EnableTrailing = EnableTrailingParam;
     EnableBreakEven = EnableBreakEvenParam;
     EnableATRAfterBreakEven = EnableATRAfterBreakEvenParam;
+    EnableTakeProfit = EnableTakeProfitParam;
 
     DPIScale = (double)TerminalInfoInteger(TERMINAL_SCREEN_DPI) / DPI_BASE_VALUE;
 
