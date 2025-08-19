@@ -68,11 +68,11 @@ input string Comment_3b = "====================";     // Graphical Window
 input bool ShowPanel = true;                          // Show Graphical Panel
 input string ExpertName = "MQLTA-ATRTS";              // Expert Name (to name the objects)
 input int Xoff = 20;                                  // Horizontal spacing for the control panel
-input int Yoff = 20;                                  // Vertical spacing for the control panel
+input int Yoff = 400;                                  // Vertical spacing for the control panel
 input string Comment_4 = "====================";      // ATR Stop Line Display
 input bool ShowATRStopLine = true;                    // Show ATR Stop Line
-input color ATRSelltopLineColor = clrHotPink;       // Line Color
-input color ATRBuyStopLineColor = clrBlue;          // Line Color
+input color ATRSelltopLineColor = clrHotPink;         // Line Color
+input color ATRBuyStopLineColor = clrBlue;            // Line Color
 input int ATRStopLineWidth = 1;                       // Line Width
 input ENUM_LINE_STYLE ATRStopLineStyle = STYLE_SOLID; // Line Style
 
@@ -809,6 +809,8 @@ double GetBreakEvenPrice(int type, double openPrice, double spread)
 // 处理止盈逻辑
 void ProcessTakeProfit(mMarketInfo &market)
 {
+    if (!(OrderType() == OP_BUY || OrderType() == OP_SELL))
+        return;
     double currentTP = NormalizeDouble(OrderTakeProfit(), market.digits);
     double newTP = CalculateTakeProfitPrice(OrderType(), OrderOpenPrice(), market);
 
@@ -834,7 +836,9 @@ void ProcessTakeProfit(mMarketInfo &market)
     else if (!validTP)
     {
         Print("WARNING: Invalid TakeProfit price ", newTP, " for ", OrderTypeToString(OrderType()),
-              " order. Ask=", market.ask, " Bid=", market.bid, " StopLevel=", market.stopLevel);
+              " order. Ask=", market.ask, " Bid=", market.bid, " StopLevel=", market.stopLevel,
+              " orderTicket=", OrderTicket(),
+              " Point=", market.point, " orderType=", OrderTypeToString(OrderType()));
     }
 }
 
