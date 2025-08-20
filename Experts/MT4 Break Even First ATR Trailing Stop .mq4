@@ -51,6 +51,8 @@ input bool UseMagic = false;                          // Filter By Magic Number
 input int MagicNumber = 0;                            // Magic Number (if above is true)
 input bool UseComment = false;                        // Filter By Comment
 input string CommentFilter = "";                      // Comment (if above is true)
+input bool EnableLotSizeFilter = false;               // Filter By Lot Size
+input string LotSizeFilter = "";                      // Lot Sizes to Filter (comma separated, e.g. "0.1,0.5,1.0")
 input bool EnableTrailingParam = true;                // Enable Trailing Stop
 input bool EnableBreakEvenParam = true;               // Enable Break Even
 input bool EnableATRAfterBreakEvenParam = false;      // Enable ATR After Break Even
@@ -68,9 +70,9 @@ input string Comment_3b = "====================";     // Graphical Window
 input bool ShowPanel = true;                          // Show Graphical Panel
 input string ExpertName = "MQLTA-ATRTS";              // Expert Name (to name the objects)
 input int Xoff = 20;                                  // Horizontal spacing for the control panel
-input int Yoff = 400;                                  // Vertical spacing for the control panel
+input int Yoff = 400;                                 // Vertical spacing for the control panel
 input string Comment_4 = "====================";      // ATR Stop Line Display
-input bool ShowATRStopLine = true;                    // Show ATR Stop Line
+input bool ShowATRStopLine = false;                    // Show ATR Stop Line
 input color ATRSelltopLineColor = clrHotPink;         // Line Color
 input color ATRBuyStopLineColor = clrBlue;            // Line Color
 input int ATRStopLineWidth = 1;                       // Line Width
@@ -249,8 +251,32 @@ bool ShouldProcessOrder()
         return false;
     if ((OnlyType != All) && (OrderType() != OnlyType))
         return false;
+    // 添加手数过滤条件（支持逗号分隔的多个手数值）
+    if (EnableLotSizeFilter && !IsLotSizeInFilter(OrderLots()))
+        return false;
 
     return true;
+}
+
+// 检查订单手数是否在过滤列表中
+bool IsLotSizeInFilter(double orderLots)
+{
+    // 如果过滤列表为空，则不过滤
+    if (StringLen(LotSizeFilter) == 0)
+        return true;
+    
+    string sizes[];
+    int count = StringSplit(LotSizeFilter, ',', sizes);
+    
+    for (int i = 0; i < count; i++)
+    {
+        double lotSize = StringToDouble(sizes[i]);
+        // 使用相对误差比较浮点数
+        if (MathAbs(orderLots - lotSize) < 0.00001)
+            return true;
+    }
+    
+    return false;
 }
 
 // 计算并规范化止损价格
