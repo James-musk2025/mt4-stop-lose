@@ -72,7 +72,7 @@ input string ExpertName = "MQLTA-ATRTS";              // Expert Name (to name th
 input int Xoff = 20;                                  // Horizontal spacing for the control panel
 input int Yoff = 400;                                 // Vertical spacing for the control panel
 input string Comment_4 = "====================";      // ATR Stop Line Display
-input bool ShowATRStopLine = false;                    // Show ATR Stop Line
+input bool ShowATRStopLine = false;                   // Show ATR Stop Line
 input color ATRSelltopLineColor = clrHotPink;         // Line Color
 input color ATRBuyStopLineColor = clrBlue;            // Line Color
 input int ATRStopLineWidth = 1;                       // Line Width
@@ -264,10 +264,10 @@ bool IsLotSizeInFilter(double orderLots)
     // 如果过滤列表为空，则不过滤
     if (StringLen(LotSizeFilter) == 0)
         return true;
-    
+
     string sizes[];
     int count = StringSplit(LotSizeFilter, ',', sizes);
-    
+
     for (int i = 0; i < count; i++)
     {
         double lotSize = StringToDouble(sizes[i]);
@@ -275,7 +275,7 @@ bool IsLotSizeInFilter(double orderLots)
         if (MathAbs(orderLots - lotSize) < 0.00001)
             return true;
     }
-    
+
     return false;
 }
 
@@ -843,15 +843,15 @@ void ProcessTakeProfit(mMarketInfo &market)
     // 规范化价格
     newTP = NormalizeDouble(newTP, market.digits);
 
-    // 验证止盈价有效性
+    // 验证止盈价有效性 - 使用>=和<=允许边界值
     bool validTP = false;
     if (OrderType() == OP_BUY)
     {
-        validTP = (newTP > market.ask + market.stopLevel);
+        validTP = (newTP >= market.ask + market.stopLevel);
     }
     else if (OrderType() == OP_SELL)
     {
-        validTP = (newTP < market.bid - market.stopLevel);
+        validTP = (newTP <= market.bid - market.stopLevel);
     }
 
     // 检查是否需要更新止盈
@@ -861,21 +861,41 @@ void ProcessTakeProfit(mMarketInfo &market)
     }
     else if (!validTP)
     {
+        // 添加更详细的调试信息
         Print("WARNING: Invalid TakeProfit price ", newTP, " for ", OrderTypeToString(OrderType()),
               " order. Ask=", market.ask, " Bid=", market.bid, " StopLevel=", market.stopLevel,
-              " orderTicket=", OrderTicket(),
-              " Point=", market.point, " orderType=", OrderTypeToString(OrderType()));
+              " orderTicket=", OrderTicket(), " OpenPrice=", OrderOpenPrice(),
+              " Point=", market.point, " orderType=", OrderTypeToString(OrderType()),
+              " TakeProfitPips=", TakeProfitPips,
+              " Calculated TP=", newTP, " Market Price=", (OrderType() == OP_BUY ? market.ask : market.bid));
     }
 }
 
 // 计算止盈价格
 double CalculateTakeProfitPrice(int orderType, double openPrice, mMarketInfo &market)
 {
+    double tpPrice = 0;
+
     if (orderType == OP_BUY)
-        return openPrice + TakeProfitPips * market.point;
+    {
+        tpPrice = openPrice + TakeProfitPips * market.point;
+        // 确保止盈价高于当前市价
+        if (tpPrice < market.ask + market.stopLevel)
+            tpPrice = market.ask + TakeProfitPips * market.point + market.stopLevel;
+    }
     else if (orderType == OP_SELL)
-        return openPrice - TakeProfitPips * market.point;
-    return 0;
+    {
+        tpPrice = openPrice - TakeProfitPips * market.point;
+        // 确保止盈价低于当前市价
+        if (tpPrice > market.bid - market.stopLevel)
+            tpPrice = market.bid - TakeProfitPips * market.point - market.stopLevel;
+    }
+
+    // 规范化价格
+    if (tpPrice != 0)
+        tpPrice = NormalizeDouble(tpPrice, market.digits);
+
+    return tpPrice;
 }
 
 string OrderTypeToString(int type)
