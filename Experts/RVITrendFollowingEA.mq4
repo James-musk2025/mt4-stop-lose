@@ -37,6 +37,8 @@ input double    ATRStopMultiplier = 3.0;       // ATR止损倍数（M15时间框
 input bool      UseTrailingStop = false;       // 使用追踪止损（默认关闭）
 input int       TrailingStartPips = 100;        // 开始追踪的最小盈利点数
 input int       MinStopAdjustment = 50;         // 止损调整最小点数（大于此值才移动止损）
+input bool      UseBreakEven = true;            // 使用保本止损功能
+input int       BreakEvenPips = 1000;            // 保本止损触发盈利点数（达到此盈利时设置保本）
 
 // === 反转平仓设置 ===
 input bool      CloseOnReversal = true;        // H1反转时平仓（默认开启）
@@ -523,6 +525,9 @@ void ManageOpenOrders()
          {
             if(UseTrailingStop)
                UpdateTrailingStop(OrderTicket());
+            
+            if(UseBreakEven)
+               UpdateBreakEvenStop(OrderTicket());
          }
       }
    }
@@ -603,6 +608,65 @@ void UpdateTrailingStop(int ticket)
          //       " 新止损=", newStop, " 调整=", DoubleToString((OrderStopLoss() - newStop) / Point, 0), "点");
       }
    }
+}
+
+//+------------------------------------------------------------------+
+//| 更新保本止损                                                     |
+//+------------------------------------------------------------------+
+void UpdateBreakEvenStop(int ticket)
+{
+  if(!OrderSelect(ticket, SELECT_BY_TICKET))
+     return;
+  
+  // 如果已经设置了保本止损，就不再处理
+  if(OrderStopLoss() >= OrderOpenPrice() && OrderType() == OP_BUY)
+     return;
+  if(OrderStopLoss() <= OrderOpenPrice() && OrderType() == OP_SELL)
+     return;
+  
+  double profitInPips = 0;
+  double breakEvenLevel = 0;
+  
+  if(OrderType() == OP_BUY)
+  {
+     profitInPips = (Bid - OrderOpenPrice()) / Point;
+     if(profitInPips >= BreakEvenPips)
+     {
+        // 设置保本止损（入场价+1点，避免因点差被触发）
+        breakEvenLevel = OrderOpenPrice() + Point;
+        bool result = OrderModify(ticket, OrderOpenPrice(), breakEvenLevel,
+                                 OrderTakeProfit(), 0, clrGreen);
+        if(result)
+        {
+           Print("买单保本止损设置成功: 票号=", ticket, " 保本水平=", breakEvenLevel,
+                 " 盈利=", DoubleToString(profitInPips, 0), "点");
+        }
+        else
+        {
+           Print("买单保本止损设置失败: 错误=", GetLastError());
+        }
+     }
+  }
+  else if(OrderType() == OP_SELL)
+  {
+     profitInPips = (OrderOpenPrice() - Ask) / Point;
+     if(profitInPips >= BreakEvenPips)
+     {
+        // 设置保本止损（入场价-1点，避免因点差被触发）
+        breakEvenLevel = OrderOpenPrice() - Point;
+        bool result = OrderModify(ticket, OrderOpenPrice(), breakEvenLevel,
+                                 OrderTakeProfit(), 0, clrGreen);
+        if(result)
+        {
+           Print("卖单保本止损设置成功: 票号=", ticket, " 保本水平=", breakEvenLevel,
+                 " 盈利=", DoubleToString(profitInPips, 0), "点");
+        }
+        else
+        {
+           Print("卖单保本止损设置失败: 错误=", GetLastError());
+        }
+     }
+  }
 }
 
 //+------------------------------------------------------------------+
