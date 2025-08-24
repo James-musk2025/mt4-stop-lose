@@ -21,7 +21,7 @@ input double    RiskPercent = 2.0;             // 风险百分比（自动手数
 
 // === RVI趋势判断参数 ===
 input int       RVIPeriod = 14;                // RVI指标周期
-input int       TrendTimeframe = PERIOD_H1;   // 趋势判断时间框架（M30=30，H1=60）
+input int       TrendTimeframe = PERIOD_H1;    // 趋势判断时间框架（H1=60）
 input int       SignalLinePeriod = 9;          // 信号线平滑周期
 input double    TrendThreshold = 0.0;          // 趋势强度阈值（0=禁用过滤）
 
@@ -36,7 +36,7 @@ input int       ATRPeriod = 14;                // ATR周期
 input double    ATRStopMultiplier = 3.0;       // ATR止损倍数（M15时间框架）
 input bool      UseTrailingStop = true;        // 使用追踪止损
 input int       TrailingStartPips = 100;        // 开始追踪的最小盈利点数
-input int       MinATRForTrailing = 50;         // ATR止损最小点数（大于此值才更新止损）
+input int       MinStopAdjustment = 50;         // 止损调整最小点数（大于此值才移动止损）
 
 // === 反转平仓设置 ===
 input bool      CloseOnReversal = true;        // H1反转时平仓
@@ -60,6 +60,10 @@ int OnInit()
    Print("趋势时间框架: ", TimeframeToString(TrendTimeframe));
    
    lastBarTime = Time[0];
+   
+   // 检查时间差异（仅在初始化时检查一次）
+   CheckTimeDifference();
+   
    return(INIT_SUCCEEDED);
 }
 
@@ -136,26 +140,61 @@ void CheckTrendSignal()
 //+------------------------------------------------------------------+
 int GetRVITrendSignal()
 {
-   // 获取H1时间框架的RVI值
-   double rvi_main = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_MAIN, 1);
-   double rvi_signal = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_SIGNAL, 1);
-   double rvi_main_prev = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_MAIN, 2);
-   double rvi_signal_prev = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_SIGNAL, 2);
+   // 获取M30时间框架的RVI值（使用当前K线和前一根K线）
+   double rvi_main = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_MAIN, 0);
+   double rvi_signal = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_SIGNAL, 0);
+   double rvi_main_prev = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_MAIN, 1);
+   double rvi_signal_prev = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_SIGNAL, 1);
    
-   // 检查金叉（买入信号）
-   if(rvi_main_prev <= rvi_signal_prev && rvi_main > rvi_signal && 
-      MathAbs(rvi_main) > TrendThreshold)
+   // 检查金叉（买入信号）- 放宽条件避免错过信号
+   if(rvi_main_prev < rvi_signal_prev && rvi_main >= rvi_signal)
    {
+      Print("检测到买入信号: 金叉形成");
+
+      // 打印RVI信号详细信息
+      Print("RVI买入信号: 当前主线=", DoubleToString(rvi_main, 4),
+            " 当前信号线=", DoubleToString(rvi_signal, 4),
+            " 前主线=", DoubleToString(rvi_main_prev, 4),
+            " 前信号线=", DoubleToString(rvi_signal_prev, 4),
+            " 价格=", DoubleToString(Close[0], 4),
+            " 时间=", TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS));
       return 1;
    }
    
-   // 检查死叉（卖出信号）
-   if(rvi_main_prev >= rvi_signal_prev && rvi_main < rvi_signal && 
-      MathAbs(rvi_main) > TrendThreshold)
+   // 检查死叉（卖出信号）- 放宽条件避免错过信号
+   if(rvi_main_prev > rvi_signal_prev && rvi_main <= rvi_signal)
    {
+      Print("检测到卖出信号: 死叉形成");
+      // 打印RVI信号详细信息
+      Print("RVI卖出信号: 当前主线=", DoubleToString(rvi_main, 4),
+            " 当前信号线=", DoubleToString(rvi_signal, 4),
+            " 前主线=", DoubleToString(rvi_main_prev, 4),
+            " 前信号线=", DoubleToString(rvi_signal_prev, 4),
+            " 价格=", DoubleToString(Close[0], 4),
+            " 时间=", TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS));
       return -1;
    }
    
+   // 即使没有明确的交叉，也检查趋势强度
+   if(MathAbs(rvi_main - rvi_signal) > 0.1) // 增加趋势强度检查
+   {
+      if(rvi_main > rvi_signal)
+      {
+         Print("强势多头趋势但未形成金叉: 主线=", DoubleToString(rvi_main, 4),
+               " 信号线=", DoubleToString(rvi_signal, 4));
+         return 1;
+      }
+      else if(rvi_main < rvi_signal)
+      {
+         Print("强势空头趋势但未形成死叉: 主线=", DoubleToString(rvi_main, 4),
+               " 信号线=", DoubleToString(rvi_signal, 4));
+         return -1;
+      }
+   }
+   
+   Print("无明确信号: 主线=", DoubleToString(rvi_main, 4),
+         " 信号线=", DoubleToString(rvi_signal, 4),
+         " 差异=", DoubleToString(rvi_main - rvi_signal, 4));
    return 0;  // 无明确信号
 }
 
@@ -234,6 +273,11 @@ void CheckAddPosition()
                "点, 阈值=", DoubleToString(profitThreshold, 0), "点, ATR=", DoubleToString(atrInPips, 0), "点");
          AddBuyPosition();
       }
+      else
+      {
+         Print("加仓检查: 当前盈利=", DoubleToString(currentProfit, 0),
+               "点, 需要=", DoubleToString(profitThreshold, 0), "点");
+      }
    }
    else if(currentTrend == -1 && HasSellOrders())
    {
@@ -243,6 +287,11 @@ void CheckAddPosition()
          Print("满足加仓条件: 当前盈利=", DoubleToString(currentProfit, 0),
                "点, 阈值=", DoubleToString(profitThreshold, 0), "点, ATR=", DoubleToString(atrInPips, 0), "点");
          AddSellPosition();
+      }
+      else
+      {
+         Print("加仓检查: 当前盈利=", DoubleToString(currentProfit, 0),
+               "点, 需要=", DoubleToString(profitThreshold, 0), "点");
       }
    }
 }
@@ -423,14 +472,9 @@ void UpdateTrailingStop(int ticket)
    double atr = GetM15ATR();
    double atrInPips = atr / Point; // 将ATR转换为点数
    
-   // 检查ATR是否大于最小要求点数
-   if(atrInPips < MinATRForTrailing)
-   {
-      Print("ATR值(", DoubleToString(atrInPips, 0), "点)小于最小要求(", MinATRForTrailing, "点)，跳过止损更新");
-      return;
-   }
-   
    double trailDistance = atr * ATRStopMultiplier;
+   
+   // 计算新的止损位置
    
    if(OrderType() == OP_BUY)
    {
@@ -441,19 +485,25 @@ void UpdateTrailingStop(int ticket)
       
       double newStop = Bid - trailDistance;
       
-      // 只有当新止损更有利时才修改
-      if(newStop > OrderStopLoss() + Point || OrderStopLoss() == 0)
+      // 只有当新止损更有利且调整幅度大于最小要求时才修改
+      if(newStop > OrderStopLoss() + MinStopAdjustment * Point || OrderStopLoss() == 0)
       {
          bool result = OrderModify(ticket, OrderOpenPrice(), newStop,
                                   OrderTakeProfit(), 0, clrBlue);
          if(result)
          {
-            Print("买单追踪止损更新: 票号=", ticket, " 新止损=", newStop, " ATR=", DoubleToString(atrInPips, 0), "点");
+            // Print("买单追踪止损更新: 票号=", ticket, " 新止损=", newStop,
+            //       " 调整=", DoubleToString((newStop - OrderStopLoss()) / Point, 0), "点");
          }
          else
          {
             Print("买单追踪止损修改失败: 错误=", GetLastError());
          }
+      }
+      else if(newStop > OrderStopLoss() + Point)
+      {
+         // Print("止损需要调整但幅度不足: 当前止损=", OrderStopLoss(),
+         //       " 新止损=", newStop, " 调整=", DoubleToString((newStop - OrderStopLoss()) / Point, 0), "点");
       }
    }
    else if(OrderType() == OP_SELL)
@@ -465,19 +515,25 @@ void UpdateTrailingStop(int ticket)
       
       double newStop = Ask + trailDistance;
       
-      // 只有当新止损更有利时才修改
-      if(newStop < OrderStopLoss() - Point || OrderStopLoss() == 0)
+      // 只有当新止损更有利且调整幅度大于最小要求时才修改
+      if(newStop < OrderStopLoss() - MinStopAdjustment * Point || OrderStopLoss() == 0)
       {
          bool result = OrderModify(ticket, OrderOpenPrice(), newStop,
                                   OrderTakeProfit(), 0, clrBlue);
          if(result)
          {
-            Print("卖单追踪止损更新: 票号=", ticket, " 新止损=", newStop, " ATR=", DoubleToString(atrInPips, 0), "点");
+            // Print("卖单追踪止损更新: 票号=", ticket, " 新止损=", newStop,
+            //       " 调整=", DoubleToString((OrderStopLoss() - newStop) / Point, 0), "点");
          }
          else
          {
             Print("卖单追踪止损修改失败: 错误=", GetLastError());
          }
+      }
+      else if(newStop < OrderStopLoss() - Point)
+      {
+         // Print("止损需要调整但幅度不足: 当前止损=", OrderStopLoss(),
+         //       " 新止损=", newStop, " 调整=", DoubleToString((OrderStopLoss() - newStop) / Point, 0), "点");
       }
    }
 }
@@ -628,4 +684,19 @@ string TimeframeToString(int tf)
       default: return "Unknown";
    }
 }
+
 //+------------------------------------------------------------------+
+//| 检查时间差异                                                     |
+//+------------------------------------------------------------------+
+void CheckTimeDifference()
+{
+   datetime serverTime = TimeCurrent();
+   datetime localTime = TimeLocal();
+   datetime gmtTime = TimeGMT();
+   
+   Print("时间检查: 服务器时间=", TimeToString(serverTime, TIME_DATE|TIME_SECONDS),
+         " 本地时间=", TimeToString(localTime, TIME_DATE|TIME_SECONDS),
+         " GMT时间=", TimeToString(gmtTime, TIME_DATE|TIME_SECONDS),
+         " 服务器-本地差异=", serverTime - localTime, "秒",
+         " 服务器-GMT差异=", serverTime - gmtTime, "秒");
+}
