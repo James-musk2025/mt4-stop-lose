@@ -51,6 +51,7 @@ int positionCount = 0;                         // 当前持仓数量
 int buyAddCount = 0;                           // 买单加仓次数
 int sellAddCount = 0;                          // 卖单加仓次数
 double lastAddPrice = 0;                       // 上次加仓价格
+datetime lastAddCheckTime = 0;                 // 上次加仓检查时间
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -82,19 +83,20 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // 只在新K线时检查信号
-   if(Time[0] == lastBarTime) 
+   // 管理现有订单（每个tick都执行）
+   ManageOpenOrders();
+   
+   // 只在新K线时检查趋势信号和反转平仓
+   if(Time[0] == lastBarTime)
    {
-      ManageOpenOrders();  // 管理现有订单
+      // 每个tick都检查加仓机会（实时加仓）
+      CheckAddPosition();
       return;
    }
    lastBarTime = Time[0];
    
    // 检查趋势信号
    CheckTrendSignal();
-   
-   // 管理现有订单
-   ManageOpenOrders();
    
    // 检查加仓机会
    CheckAddPosition();
@@ -265,6 +267,11 @@ void CheckAddPosition()
       return;
    }
    
+   // 控制加仓检查频率（每5秒检查一次）
+   if(TimeCurrent() - lastAddCheckTime < 5)
+      return;
+   lastAddCheckTime = TimeCurrent();
+   
    // 根据当前趋势方向检查对应的加仓次数
    int currentAddCount = 0;
    if(currentTrend == 1)
@@ -293,18 +300,19 @@ void CheckAddPosition()
       double initialEntryPrice = GetInitialEntryPrice(OP_BUY);
       double priceMove = (Bid - initialEntryPrice) / Point;
       
-      // 计算应该加仓的次数（每移动stepDistance加仓一次）
+      // 计算应该加仓的次数（每移动stepDistance加仓一次），但不超过最大限制
       int expectedAddCount = (int)MathFloor(priceMove / stepDistance);
+      int allowedAddCount = MathMin(expectedAddCount, MaxAddPositions);
       
       Print("买入持仓检查: 初始入场价=", DoubleToString(initialEntryPrice, 5),
             ", 当前价格=", DoubleToString(Bid, 5), ", 价格移动=", DoubleToString(priceMove, 1), "点",
-            ", 应加仓次数=", expectedAddCount);
+            ", 理论应加仓=", expectedAddCount, "次, 允许加仓=", allowedAddCount, "次");
       
-      // 如果应该加仓的次数大于当前已加仓次数，则执行加仓
-      if(expectedAddCount > buyAddCount)
+      // 如果允许加仓的次数大于当前已加仓次数，则执行加仓
+      if(allowedAddCount > buyAddCount)
       {
          Print("满足金字塔加仓条件-买入: 价格移动=", DoubleToString(priceMove, 0),
-               "点, 步长=", DoubleToString(stepDistance, 0), "点, 应加仓=", expectedAddCount,
+               "点, 步长=", DoubleToString(stepDistance, 0), "点, 允许加仓=", allowedAddCount,
                "次, 已加仓=", buyAddCount, "次");
          AddBuyPosition();
       }
@@ -321,18 +329,19 @@ void CheckAddPosition()
       double initialEntryPrice = GetInitialEntryPrice(OP_SELL);
       double priceMove = (initialEntryPrice - Ask) / Point;
       
-      // 计算应该加仓的次数（每移动stepDistance加仓一次）
+      // 计算应该加仓的次数（每移动stepDistance加仓一次），但不超过最大限制
       int expectedAddCount = (int)MathFloor(priceMove / stepDistance);
+      int allowedAddCount = MathMin(expectedAddCount, MaxAddPositions);
       
       Print("卖出持仓检查: 初始入场价=", DoubleToString(initialEntryPrice, 5),
             ", 当前价格=", DoubleToString(Ask, 5), ", 价格移动=", DoubleToString(priceMove, 1), "点",
-            ", 应加仓次数=", expectedAddCount);
+            ", 理论应加仓=", expectedAddCount, "次, 允许加仓=", allowedAddCount, "次");
       
-      // 如果应该加仓的次数大于当前已加仓次数，则执行加仓
-      if(expectedAddCount > sellAddCount)
+      // 如果允许加仓的次数大于当前已加仓次数，则执行加仓
+      if(allowedAddCount > sellAddCount)
       {
          Print("满足金字塔加仓条件-卖出: 价格移动=", DoubleToString(priceMove, 0),
-               "点, 步长=", DoubleToString(stepDistance, 0), "点, 应加仓=", expectedAddCount,
+               "点, 步长=", DoubleToString(stepDistance, 0), "点, 允许加仓=", allowedAddCount,
                "次, 已加仓=", sellAddCount, "次");
          AddSellPosition();
       }
