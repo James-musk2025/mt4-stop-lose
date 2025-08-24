@@ -25,21 +25,21 @@ input int       TrendTimeframe = PERIOD_H1;    // 趋势判断时间框架（H1=
 input int       SignalLinePeriod = 9;          // 信号线平滑周期
 input double    TrendThreshold = 0.0;          // 趋势强度阈值（0=禁用过滤）
 
-// === 反马丁加仓参数 ===
-input bool      UseAntiMartingale = true;      // 使用反马丁加仓
-input double    ProfitATRMultiple = 0.5;       // 盈利ATR倍数（N值，默认0.5倍ATR点数）
-input int       MaxAddPositions = 5;           // 最大加仓次数
-input double    AddPositionMultiplier = 2;   // 加仓手数乘数
+// === 正向金字塔加仓参数 ===
+input bool      UsePyramidAdd = true;          // 使用正向金字塔加仓
+input double    Pyramid_Step_ATRMultiplier = 0.5; // 加仓步长ATR倍数（价格移动N倍ATR时加仓）
+input int       MaxAddPositions = 10;          // 最大加仓次数（改为10次）
+input double    AddPositionMultiplier = 1.0;   // 加仓手数乘数（改为1.0，保持相同手数）
 
 // === ATR止损参数 ===
 input int       ATRPeriod = 14;                // ATR周期
 input double    ATRStopMultiplier = 3.0;       // ATR止损倍数（M15时间框架）
-input bool      UseTrailingStop = true;        // 使用追踪止损
+input bool      UseTrailingStop = false;       // 使用追踪止损（默认关闭）
 input int       TrailingStartPips = 100;        // 开始追踪的最小盈利点数
 input int       MinStopAdjustment = 50;         // 止损调整最小点数（大于此值才移动止损）
 
 // === 反转平仓设置 ===
-input bool      CloseOnReversal = true;        // H1反转时平仓
+input bool      CloseOnReversal = true;        // H1反转时平仓（默认开启）
 input bool      CloseAllOnReversal = true;     // 反转时平掉所有仓位
 
 //+------------------------------------------------------------------+
@@ -48,6 +48,8 @@ input bool      CloseAllOnReversal = true;     // 反转时平掉所有仓位
 datetime lastBarTime = 0;
 int currentTrend = 0;                          // 当前趋势方向：1=多头，-1=空头，0=无趋势
 int positionCount = 0;                         // 当前持仓数量
+int buyAddCount = 0;                           // 买单加仓次数
+int sellAddCount = 0;                          // 卖单加仓次数
 double lastAddPrice = 0;                       // 上次加仓价格
 
 //+------------------------------------------------------------------+
@@ -146,7 +148,7 @@ int GetRVITrendSignal()
    double rvi_main_prev = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_MAIN, 1);
    double rvi_signal_prev = iRVI(NULL, TrendTimeframe, RVIPeriod, MODE_SIGNAL, 1);
    
-   // 检查金叉（买入信号）- 放宽条件避免错过信号
+   // 检查金叉（买入信号）
    if(rvi_main_prev < rvi_signal_prev && rvi_main >= rvi_signal)
    {
       Print("检测到买入信号: 金叉形成");
@@ -161,7 +163,7 @@ int GetRVITrendSignal()
       return 1;
    }
    
-   // 检查死叉（卖出信号）- 放宽条件避免错过信号
+   // 检查死叉（卖出信号）
    if(rvi_main_prev > rvi_signal_prev && rvi_main <= rvi_signal)
    {
       Print("检测到卖出信号: 死叉形成");
@@ -176,25 +178,25 @@ int GetRVITrendSignal()
    }
    
    // 即使没有明确的交叉，也检查趋势强度
-   if(MathAbs(rvi_main - rvi_signal) > 0.1) // 增加趋势强度检查
+   if(MathAbs(rvi_main - rvi_signal) > 0.15)
    {
       if(rvi_main > rvi_signal)
       {
-         Print("强势多头趋势但未形成金叉: 主线=", DoubleToString(rvi_main, 4),
-               " 信号线=", DoubleToString(rvi_signal, 4));
+         // Print("强势多头趋势但未形成金叉: 主线=", DoubleToString(rvi_main, 4),
+         //       " 信号线=", DoubleToString(rvi_signal, 4));
          return 1;
       }
       else if(rvi_main < rvi_signal)
       {
-         Print("强势空头趋势但未形成死叉: 主线=", DoubleToString(rvi_main, 4),
-               " 信号线=", DoubleToString(rvi_signal, 4));
+         // Print("强势空头趋势但未形成死叉: 主线=", DoubleToString(rvi_main, 4),
+         //       " 信号线=", DoubleToString(rvi_signal, 4));
          return -1;
       }
    }
    
-   Print("无明确信号: 主线=", DoubleToString(rvi_main, 4),
-         " 信号线=", DoubleToString(rvi_signal, 4),
-         " 差异=", DoubleToString(rvi_main - rvi_signal, 4));
+   // Print("无明确信号: 主线=", DoubleToString(rvi_main, 4),
+   //       " 信号线=", DoubleToString(rvi_signal, 4),
+   //       " 差异=", DoubleToString(rvi_main - rvi_signal, 4));
    return 0;  // 无明确信号
 }
 
@@ -257,42 +259,94 @@ void OpenSellOrder()
 //+------------------------------------------------------------------+
 void CheckAddPosition()
 {
-   if(!UseAntiMartingale || positionCount >= MaxAddPositions)
+   if(!UsePyramidAdd)
+   {
+      Print("正向金字塔加仓功能已禁用");
       return;
+   }
    
-   double atr = GetM15ATR();
+   // 根据当前趋势方向检查对应的加仓次数
+   int currentAddCount = 0;
+   if(currentTrend == 1)
+      currentAddCount = buyAddCount;
+   else if(currentTrend == -1)
+      currentAddCount = sellAddCount;
+   
+   if(currentAddCount >= MaxAddPositions)
+   {
+      Print("已达到最大加仓次数限制: ", currentAddCount, "/", MaxAddPositions,
+            " (", (currentTrend == 1 ? "买单" : "卖单"), ")");
+      return;
+   }
+   
+   // 使用与趋势判断相同时间框架的ATR
+   double atr = iATR(NULL, TrendTimeframe, ATRPeriod, 0);
    double atrInPips = atr / Point; // 将ATR转换为点数
-   double profitThreshold = atrInPips * ProfitATRMultiple; // 基于ATR点数计算盈利阈值
+   double stepDistance = atrInPips * Pyramid_Step_ATRMultiplier; // 加仓步长
+   
+   Print("金字塔加仓检查: ATR=", DoubleToString(atrInPips, 1), "点, 加仓步长=",
+         DoubleToString(stepDistance, 1), "点, 当前持仓=", positionCount);
    
    if(currentTrend == 1 && HasBuyOrders())
    {
-      double currentProfit = (Bid - lastAddPrice) / Point;
-      if(currentProfit >= profitThreshold)
+      // 计算从初始入场价到当前价格的移动距离
+      double initialEntryPrice = GetInitialEntryPrice(OP_BUY);
+      double priceMove = (Bid - initialEntryPrice) / Point;
+      
+      // 计算应该加仓的次数（每移动stepDistance加仓一次）
+      int expectedAddCount = (int)MathFloor(priceMove / stepDistance);
+      
+      Print("买入持仓检查: 初始入场价=", DoubleToString(initialEntryPrice, 5),
+            ", 当前价格=", DoubleToString(Bid, 5), ", 价格移动=", DoubleToString(priceMove, 1), "点",
+            ", 应加仓次数=", expectedAddCount);
+      
+      // 如果应该加仓的次数大于当前已加仓次数，则执行加仓
+      if(expectedAddCount > buyAddCount)
       {
-         Print("满足加仓条件: 当前盈利=", DoubleToString(currentProfit, 0),
-               "点, 阈值=", DoubleToString(profitThreshold, 0), "点, ATR=", DoubleToString(atrInPips, 0), "点");
+         Print("满足金字塔加仓条件-买入: 价格移动=", DoubleToString(priceMove, 0),
+               "点, 步长=", DoubleToString(stepDistance, 0), "点, 应加仓=", expectedAddCount,
+               "次, 已加仓=", buyAddCount, "次");
          AddBuyPosition();
       }
       else
       {
-         Print("加仓检查: 当前盈利=", DoubleToString(currentProfit, 0),
-               "点, 需要=", DoubleToString(profitThreshold, 0), "点");
+         Print("加仓检查-买入: 还需移动",
+               DoubleToString(((buyAddCount + 1) * stepDistance) - priceMove, 0),
+               "点才能下次加仓");
       }
    }
    else if(currentTrend == -1 && HasSellOrders())
    {
-      double currentProfit = (lastAddPrice - Ask) / Point;
-      if(currentProfit >= profitThreshold)
+      // 计算从初始入场价到当前价格的移动距离
+      double initialEntryPrice = GetInitialEntryPrice(OP_SELL);
+      double priceMove = (initialEntryPrice - Ask) / Point;
+      
+      // 计算应该加仓的次数（每移动stepDistance加仓一次）
+      int expectedAddCount = (int)MathFloor(priceMove / stepDistance);
+      
+      Print("卖出持仓检查: 初始入场价=", DoubleToString(initialEntryPrice, 5),
+            ", 当前价格=", DoubleToString(Ask, 5), ", 价格移动=", DoubleToString(priceMove, 1), "点",
+            ", 应加仓次数=", expectedAddCount);
+      
+      // 如果应该加仓的次数大于当前已加仓次数，则执行加仓
+      if(expectedAddCount > sellAddCount)
       {
-         Print("满足加仓条件: 当前盈利=", DoubleToString(currentProfit, 0),
-               "点, 阈值=", DoubleToString(profitThreshold, 0), "点, ATR=", DoubleToString(atrInPips, 0), "点");
+         Print("满足金字塔加仓条件-卖出: 价格移动=", DoubleToString(priceMove, 0),
+               "点, 步长=", DoubleToString(stepDistance, 0), "点, 应加仓=", expectedAddCount,
+               "次, 已加仓=", sellAddCount, "次");
          AddSellPosition();
       }
       else
       {
-         Print("加仓检查: 当前盈利=", DoubleToString(currentProfit, 0),
-               "点, 需要=", DoubleToString(profitThreshold, 0), "点");
+         Print("加仓检查-卖出: 还需移动",
+               DoubleToString(((sellAddCount + 1) * stepDistance) - priceMove, 0),
+               "点才能下次加仓");
       }
+   }
+   else
+   {
+      Print("加仓检查: 无持仓或趋势不匹配, 趋势=", currentTrend,
+            ", 有买单=", HasBuyOrders(), ", 有卖单=", HasSellOrders());
    }
 }
 
@@ -312,10 +366,12 @@ void AddBuyPosition()
    
    if(ticket > 0)
    {
-      Print("加仓买入成功: 票号=", ticket, " 手数=", lotSize, 
+      Print("加仓买入成功: 票号=", ticket, " 手数=", lotSize,
             " 入场=", entry, " 止损=", stopLoss);
       positionCount++;
+      buyAddCount++;
       lastAddPrice = entry;
+      Print("买单加仓次数更新: ", buyAddCount, "/", MaxAddPositions);
    }
    else
    {
@@ -339,10 +395,12 @@ void AddSellPosition()
    
    if(ticket > 0)
    {
-      Print("加仓卖出成功: 票号=", ticket, " 手数=", lotSize, 
+      Print("加仓卖出成功: 票号=", ticket, " 手数=", lotSize,
             " 入场=", entry, " 止损=", stopLoss);
       positionCount++;
+      sellAddCount++;
       lastAddPrice = entry;
+      Print("卖单加仓次数更新: ", sellAddCount, "/", MaxAddPositions);
    }
    else
    {
@@ -556,6 +614,12 @@ void CloseAllOrders()
                {
                   Print("买单平仓成功: 票号=", OrderTicket());
                   positionCount--;
+                  // 重置买单加仓次数
+                  if(positionCount == 0)
+                  {
+                     buyAddCount = 0;
+                     Print("买单加仓次数重置为0");
+                  }
                }
             }
             else if(OrderType() == OP_SELL)
@@ -565,6 +629,12 @@ void CloseAllOrders()
                {
                   Print("卖单平仓成功: 票号=", OrderTicket());
                   positionCount--;
+                  // 重置卖单加仓次数
+                  if(positionCount == 0)
+                  {
+                     sellAddCount = 0;
+                     Print("卖单加仓次数重置为0");
+                  }
                }
             }
          }
@@ -663,6 +733,46 @@ bool HasSellOrders()
       }
    }
    return false;
+}
+
+//+------------------------------------------------------------------+
+//| 获取初始入场价格                                                 |
+//+------------------------------------------------------------------+
+double GetInitialEntryPrice(int orderType)
+{
+   double initialPrice = 0;
+   int count = 0;
+   
+   for(int i = 0; i < OrdersTotal(); i++)
+   {
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+      {
+         if(OrderSymbol() == Symbol() && OrderMagicNumber() == MagicNumber && OrderType() == orderType)
+         {
+            if(count == 0)
+            {
+               initialPrice = OrderOpenPrice();
+            }
+            else
+            {
+               // 找到最早的订单价格
+               if(OrderOpenTime() < initialPrice)
+               {
+                  initialPrice = OrderOpenPrice();
+               }
+            }
+            count++;
+         }
+      }
+   }
+   
+   if(count > 0)
+   {
+      Print("找到", count, "个", (orderType == OP_BUY ? "买单" : "卖单"),
+            ", 初始入场价格=", DoubleToString(initialPrice, 5));
+   }
+   
+   return initialPrice;
 }
 
 //+------------------------------------------------------------------+
