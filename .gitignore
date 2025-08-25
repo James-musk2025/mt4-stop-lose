@@ -2,3 +2,5 @@
 Logs/
 *.dat
 files/
+Libraries/
+.vscode/
