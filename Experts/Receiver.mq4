@@ -33,7 +33,7 @@ int OnInit()
    }
    
    Print("成功连接到广播管道!");
-   EventSetTimer(500); // 每500毫秒检查一次数据
+   EventSetTimer(1); // 每500毫秒检查一次数据
    return(INIT_SUCCEEDED);
 }
 
@@ -48,6 +48,8 @@ void OnDeinit(const int reason)
 
 void OnTimer()
 {
+   Print("接收端OnTimer被调用，检查管道数据...");
+   
    // 检查管道中是否有可用数据
    int totalBytesAvail[1] = {0};
    int bytesRead[1] = {0};
@@ -56,8 +58,10 @@ void OnTimer()
    int nBufferSize = 0;
    
    if(PeekNamedPipe(hPipe, buffer, nBufferSize, bytesRead, totalBytesAvail, bytesLeftThisMessage)) {
+      Print("PeekNamedPipe成功，可用数据: ", totalBytesAvail[0], " 字节");
+      
       if(totalBytesAvail[0] > 0) {
-         Print("检测到 ", totalBytesAvail[0], " 字节可用数据");
+         Print("检测到 ", totalBytesAvail[0], " 字节可用数据，准备读取...");
          uchar data[1024];
          int bytesReadActual[1] = {0};
          int overlapped = 0;
@@ -74,6 +78,8 @@ void OnTimer()
       }
    } else {
       int peekError = GetLastError();
-      Print("检查管道数据失败! 错误代码: ", peekError);
+      Print("PeekNamedPipe失败! 错误代码: ", peekError);
    }
+   
+   Print("接收端OnTimer执行完成");
 }
