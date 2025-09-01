@@ -11,7 +11,6 @@ int hBroadcastPipe;
 string pipeName = "\\\\.\\pipe\\MT4_Broadcast_" + IntegerToString(AccountNumber());
 int counter = 0;
 datetime lastSendTime = 0;
-int error;
 
 int OnInit()
 {
@@ -25,7 +24,7 @@ int OnInit()
                                     0, 0);
    
    if(hBroadcastPipe == -1) {
-      error = GetLastError();
+      int error = GetLastError();
       Print("创建管道失败! 错误代码: ", error);
       return(INIT_FAILED);
    }
@@ -37,9 +36,14 @@ int OnInit()
    if(ConnectNamedPipe(hBroadcastPipe, overlapped)) {
       Print("客户端已连接到管道");
    } else {
-      error = GetLastError();
-      Print("等待客户端连接失败! 错误代码: ", error);
-      return(INIT_FAILED);
+      int connectError = GetLastError();
+      // 如果错误代码是535 (ERROR_PIPE_CONNECTED) 或 0，表示连接正常
+      if(connectError == 535 || connectError == 0) {
+         Print("客户端连接状态正常 (错误代码: ", connectError, ")");
+      } else {
+         Print("等待客户端连接失败! 错误代码: ", connectError);
+         return(INIT_FAILED);
+      }
    }
    
    Print("开始发送连续数字...");
@@ -70,7 +74,17 @@ void OnTimer()
    if(WriteFile(hBroadcastPipe, data, ArraySize(data), written, overlapped)) {
       Print("发送成功: ", message, " (", written[0], " 字节)");
    } else {
-      error = GetLastError();
-      Print("发送失败! 错误代码: ", error);
+      int writeError = GetLastError();
+      Print("发送失败! 错误代码: ", writeError);
+      // 如果是管道断开错误，尝试重新连接
+      if(writeError == 109 || writeError == 232) { // ERROR_BROKEN_PIPE or ERROR_NO_DATA
+         Print("管道已断开，尝试重新创建...");
+         CloseHandle(hBroadcastPipe);
+         hBroadcastPipe = CreateNamedPipeW(pipeName, 0x00000002, 0x00000004, 10, 1024, 0, 0, 0);
+         if(hBroadcastPipe != -1) {
+            int connectOverlapped = 0;
+            ConnectNamedPipe(hBroadcastPipe, connectOverlapped);
+         }
+      }
    }
 }

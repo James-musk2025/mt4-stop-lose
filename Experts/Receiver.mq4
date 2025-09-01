@@ -57,17 +57,20 @@ void OnTimer()
    
    if(PeekNamedPipe(hPipe, buffer, nBufferSize, bytesRead, totalBytesAvail, bytesLeftThisMessage)) {
       if(totalBytesAvail[0] > 0) {
+         Print("检测到 ", totalBytesAvail[0], " 字节可用数据");
          uchar data[1024];
          int bytesReadActual[1] = {0};
          int overlapped = 0;
          
          if(ReadFile(hPipe, data, MathMin(ArraySize(data), totalBytesAvail[0]), bytesReadActual, overlapped)) {
             string message = CharArrayToString(data, 0, bytesReadActual[0]);
-            Print("收到消息: ", message);
+            Print("收到消息: ", message, " (", bytesReadActual[0], " 字节)");
          } else {
             int readError = GetLastError();
             Print("读取数据失败! 错误代码: ", readError);
          }
+      } else {
+         Print("管道中没有可用数据");
       }
    } else {
       int peekError = GetLastError();
