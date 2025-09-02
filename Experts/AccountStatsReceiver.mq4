@@ -56,17 +56,17 @@ void ParseStatsString(string stats)
       }
       
       // 显示解析结果
-      Print("=== 账户统计信息 ===");
-      Print("账户: ", targetAccount);
-      Print("持仓浮亏: $", DoubleToStr(floatingLoss, 2));
-      Print("账户净值: $", DoubleToStr(equity, 2));
-      Print("最大回撤: $", DoubleToStr(MathAbs(maxDrawdown), 2));
-      Print("恢复比率: ", DoubleToStr(recoveryRatio * 100, 1), "%");
-      Print("更新时间: ", updateTime);
-      Print("====================");
+      // Print("=== 账户统计信息 ===");
+      // Print("账户: ", targetAccount);
+      // Print("持仓浮亏: $", DoubleToStr(floatingLoss, 2));
+      // Print("账户净值: $", DoubleToStr(equity, 2));
+      // Print("最大回撤: $", DoubleToStr(MathAbs(maxDrawdown), 2));
+      // Print("恢复比率: ", DoubleToStr(recoveryRatio * 100, 1), "%");
+      // Print("更新时间: ", updateTime);
+      // Print("====================");
       
       // 在图表上显示统计信息（左下角，坐标10,20）
-      UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, 0, 10, 20);
+      UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, CORNER_RIGHT_UPPER, 10, 20);
    }
    else
    {
