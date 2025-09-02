@@ -4,6 +4,8 @@
 #property version   "1.00"
 #property strict
 
+#include <AccountStatsDisplay.mqh>
+
 // 要监控的账户号
 int targetAccount = 2100891669; // 修改为要监控的实际账户号
 
@@ -15,14 +17,6 @@ int OnInit()
    Print("账户统计接收端启动，监控账户: ", targetAccount);
    EventSetMillisecondTimer(300); // 每500毫秒检查一次
    return(INIT_SUCCEEDED);
-}
-
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                 |
-//+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-{
-   EventKillTimer();
 }
 
 //+------------------------------------------------------------------+
@@ -70,6 +64,9 @@ void ParseStatsString(string stats)
       Print("恢复比率: ", DoubleToStr(recoveryRatio * 100, 1), "%");
       Print("更新时间: ", updateTime);
       Print("====================");
+      
+      // 在图表上显示统计信息（左下角，坐标10,20）
+      UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, 0, 10, 20);
    }
    else
    {
@@ -104,6 +101,15 @@ void CheckAndReadStats()
    {
       Print("未找到统计文件: ", filename);
    }
+}
+
+//+------------------------------------------------------------------+
+//| Expert deinitialization function                                 |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+   ClearStatsDisplay(); // 清理显示对象
 }
 
 //+------------------------------------------------------------------+

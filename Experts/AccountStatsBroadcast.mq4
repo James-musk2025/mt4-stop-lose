@@ -4,6 +4,8 @@
 #property version   "1.00"
 #property strict
 
+#include <AccountStatsDisplay.mqh>
+
 // 全局变量
 double maxDrawdown = 0.0;          // 最大回撤纪录
 double lastProfitEquity = 0.0;     // 上次盈利时的净值
@@ -129,7 +131,7 @@ void WriteStatsToFile()
    {
       FileWrite(handle, stats);
       FileClose(handle);
-      Print("账户统计信息已更新: ", stats);
+      // Print("账户统计信息已更新: ", stats);
    }
    else
    {
@@ -147,6 +149,14 @@ void OnTimer()
    
    // 写入统计信息到文件
    WriteStatsToFile();
+   
+   // 在图表上显示统计信息（左下角，坐标10,20）
+   double floatingLoss = CalculateFloatingLoss();
+   double equity = AccountEquity();
+   double recoveryRatio = CalculateRecoveryRatio();
+   string updateTime = TimeToStr(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+   
+   UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, 1, 10, 20);
    
    lastUpdateTime = TimeCurrent();
 }
