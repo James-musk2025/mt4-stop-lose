@@ -13,7 +13,7 @@ int targetAccount = 2100891669; // 修改为要监控的实际账户号
 int OnInit()
 {
    Print("账户统计接收端启动，监控账户: ", targetAccount);
-   EventSetMillisecondTimer(500); // 每500毫秒检查一次
+   EventSetMillisecondTimer(300); // 每500毫秒检查一次
    return(INIT_SUCCEEDED);
 }
 
