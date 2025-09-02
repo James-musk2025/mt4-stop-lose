@@ -5,7 +5,7 @@ int OnInit()
 {
    Print("文件广播发送端启动");
    Print("开始写入连续数字到文件...");
-   EventSetTimer(1); // 每秒写入一次
+   EventSetMillisecondTimer(500); // 每500毫秒写入一次
    return(INIT_SUCCEEDED);
 }
 

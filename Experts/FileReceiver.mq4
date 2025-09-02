@@ -5,7 +5,7 @@ int OnInit()
 {
    // 设置要跟随的账户号（这里使用当前账户号作为示例）
    Print("文件接收端启动，监听账户: ", targetAccount);
-   EventSetTimer(1); // 每500毫秒检查一次文件
+   EventSetMillisecondTimer(500); // 每250毫秒检查一次文件
    return(INIT_SUCCEEDED);
 }
 
