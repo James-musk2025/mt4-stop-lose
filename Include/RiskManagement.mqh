@@ -1,9 +1,11 @@
 // 风险管理模块 - 止损和恢复功能
 #property strict
 
+// 包含恢复检查模块
+#include <RecoveryCheck.mqh>
+
 // 使用input参数（在EA中定义）
 input double StopLossAmount = 1000.0;    // 止损金额
-input double RecoveryRatioThreshold = 0.8; // 恢复比例阈值
 
 // 全局变量
 double initialBalance = 0.0;          // 初始余额
@@ -45,13 +47,19 @@ bool CheckStopLoss()
 bool CheckRecovery()
 {
    if(!isStoppedOut) return false; // 没有止损，不需要恢复
-    
+     
+   // 使用新的恢复检查模块
+   string currentSymbol = Symbol();
+   int currentTimeframe = Period();
    double currentEquity = AccountEquity();
-   double recoveryLevel = initialBalance - (StopLossAmount * (1 - RecoveryRatioThreshold));
    
-   if(currentEquity >= recoveryLevel)
+   bool shouldRecover = CheckRecoveryConditions(isStoppedOut, currentEquity,
+                                               initialBalance, StopLossAmount,
+                                               currentSymbol, currentTimeframe);
+   
+   if(shouldRecover)
    {
-      Print("达到恢复条件! 当前净值: $", currentEquity, ", 恢复水平: $", recoveryLevel);
+      Print("达到恢复条件! 执行恢复操作");
       ExecuteRecovery();
       return true;
    }

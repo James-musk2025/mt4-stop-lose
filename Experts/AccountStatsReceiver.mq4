@@ -6,16 +6,14 @@
 
 #include <AccountStatsDisplay.mqh>
 #include <RiskManagement.mqh>
-
-// 要监控的账户号
-input int targetAccount = 2100891669; // 修改为要监控的实际账户号
+#include <RecoveryCheck.mqh>
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("账户统计接收端启动，监控账户: ", targetAccount);
+   Print("账户统计接收端启动，监控账户: ", SignalAccountNumber);
    
    // 初始化风险管理模块
    InitRiskManagement();
@@ -60,7 +58,7 @@ void ParseStatsString(string stats)
          }
       }
       
-      // 在图表上显示统计信息（右下角，坐标10,20）
+      // 在图表上显示统计信息（右上角，坐标10,20）
       UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, CORNER_RIGHT_UPPER, 10, 20);
    }
    else
@@ -74,28 +72,9 @@ void ParseStatsString(string stats)
 //+------------------------------------------------------------------+
 void CheckAndReadStats()
 {
-   string filename = IntegerToString(targetAccount) + "_stats.dat";
-   
-   if(FileIsExist(filename, FILE_COMMON))
-   {
-      int handle = FileOpen(filename, FILE_READ|FILE_TXT|FILE_COMMON);
-      if(handle != INVALID_HANDLE)
-      {
-         string stats = FileReadString(handle);
-         FileClose(handle);
-         
-         // 解析并显示统计信息
-         ParseStatsString(stats);
-      }
-      else
-      {
-         Print("读取统计文件失败!");
-      }
-   }
-   else
-   {
-      Print("未找到统计文件: ", filename);
-   }
+   AccountStats accountStats = ReadSignalAccountStats(SignalAccountNumber);
+   // 在图表上显示统计信息（右上角，坐标10,20）
+   UpdateStatsDisplay(accountStats.floatingLoss, accountStats.equity, accountStats.maxDrawdown, accountStats.recoveryRatio, accountStats.updateTime, CORNER_RIGHT_UPPER, 10, 20);
 }
 
 //+------------------------------------------------------------------+
