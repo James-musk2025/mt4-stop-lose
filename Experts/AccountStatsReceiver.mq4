@@ -1,10 +1,11 @@
-// 账户统计信息接收端
-#property copyright "Account Statistics Receiver"
+// 账户统计信息接收端 - 带止损和恢复功能
+#property copyright "Account Statistics Receiver with Risk Management"
 #property link      ""
 #property version   "1.00"
 #property strict
 
 #include <AccountStatsDisplay.mqh>
+#include <RiskManagement.mqh>
 
 // 要监控的账户号
 input int targetAccount = 2100891669; // 修改为要监控的实际账户号
@@ -15,6 +16,10 @@ input int targetAccount = 2100891669; // 修改为要监控的实际账户号
 int OnInit()
 {
    Print("账户统计接收端启动，监控账户: ", targetAccount);
+   
+   // 初始化风险管理模块
+   InitRiskManagement();
+   
    EventSetMillisecondTimer(300); // 每500毫秒检查一次
    return(INIT_SUCCEEDED);
 }
@@ -55,7 +60,7 @@ void ParseStatsString(string stats)
          }
       }
       
-      // 在图表上显示统计信息（左下角，坐标10,20）
+      // 在图表上显示统计信息（右下角，坐标10,20）
       UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, CORNER_RIGHT_UPPER, 10, 20);
    }
    else
@@ -108,4 +113,8 @@ void OnDeinit(const int reason)
 void OnTimer()
 {
    CheckAndReadStats();
+   
+   // 检查止损和恢复条件
+   CheckStopLoss();
+   CheckRecovery();
 }
