@@ -5,11 +5,12 @@
 #include <RecoveryCheck.mqh>
 
 // 使用input参数（在EA中定义）
-input double StopLossAmount = 1000.0;    // 止损金额
+input double StopLossAmount = 1000.0;                                                            // 止损金额
+input string templates = "XAUUSD-90784-Pendding-Order.tpl"; // 要恢复的EA模板，逗分隔
 
 // 全局变量
-double initialBalance = 0.0;          // 初始余额
-bool isStoppedOut = false;            // 是否已止损
+double initialBalance = 0.0;                   // 初始余额
+bool isStoppedOut = false;                     // 是否已止损
 string templateListFile = "template_list.txt"; // 模板列表文件
 
 //+------------------------------------------------------------------+
@@ -26,18 +27,19 @@ void InitRiskManagement()
 //+------------------------------------------------------------------+
 bool CheckStopLoss()
 {
-   if(isStoppedOut) return false; // 已经止损过了
-    
+   if (isStoppedOut)
+      return false; // 已经止损过了
+
    double currentEquity = AccountEquity();
    double stopLossLevel = initialBalance - StopLossAmount;
-   
-   if(currentEquity <= stopLossLevel)
+
+   if (currentEquity <= stopLossLevel)
    {
       Print("触发止损! 当前净值: $", currentEquity, ", 止损水平: $", stopLossLevel);
       ExecuteStopLoss();
       return true;
    }
-   
+
    return false;
 }
 
@@ -46,24 +48,25 @@ bool CheckStopLoss()
 //+------------------------------------------------------------------+
 bool CheckRecovery()
 {
-   if(!isStoppedOut) return false; // 没有止损，不需要恢复
-     
+   if (!isStoppedOut)
+      return false; // 没有止损，不需要恢复
+
    // 使用新的恢复检查模块
    string currentSymbol = Symbol();
    int currentTimeframe = Period();
    double currentEquity = AccountEquity();
-   
+
    bool shouldRecover = CheckRecoveryConditions(isStoppedOut, currentEquity,
-                                               initialBalance, StopLossAmount,
-                                               currentSymbol, currentTimeframe);
-   
-   if(shouldRecover)
+                                                initialBalance, StopLossAmount,
+                                                currentSymbol, currentTimeframe);
+
+   if (shouldRecover)
    {
       Print("达到恢复条件! 执行恢复操作");
       ExecuteRecovery();
       return true;
    }
-   
+
    return false;
 }
 
@@ -73,16 +76,16 @@ bool CheckRecovery()
 void ExecuteStopLoss()
 {
    Print("开始执行止损操作...");
-   
+
    // 1. 保存所有其他图表模板
    SaveAllChartTemplates();
-   
+
    // 2. 关闭其他图表
    CloseOtherCharts();
-   
+
    // 3. 平仓所有交易
    CloseAllTrades();
-   
+
    isStoppedOut = true;
    // 止损后更新初始余额为当前余额
    initialBalance = AccountBalance();
@@ -95,26 +98,26 @@ void ExecuteStopLoss()
 void SaveAllChartTemplates()
 {
    Print("开始保存所有图表模板...");
-   
-   int handle = FileOpen(templateListFile, FILE_WRITE|FILE_TXT);
-   if(handle == INVALID_HANDLE)
+
+   int handle = FileOpen(templateListFile, FILE_WRITE | FILE_TXT);
+   if (handle == INVALID_HANDLE)
    {
       Print("创建模板列表文件失败!");
       return;
    }
-   
+
    long chartId = ChartFirst();
-   while(chartId != -1)
+   while (chartId != -1)
    {
       // 跳过当前图表（风险管理EA所在的图表）
-      if(chartId != ChartID())
+      if (chartId != ChartID())
       {
          string symbol = ChartSymbol(chartId);
          int timeframe = ChartPeriod(chartId);
          string templateName = StringFormat("%s-%d-%s", symbol, timeframe, IntegerToString(chartId));
-         
+
          // 保存模板
-         if(ChartSaveTemplate(chartId, templateName))
+         if (ChartSaveTemplate(chartId, templateName))
          {
             FileWrite(handle, templateName);
             Print("保存模板: ", templateName);
@@ -124,10 +127,10 @@ void SaveAllChartTemplates()
             Print("保存模板失败: ", templateName);
          }
       }
-      
+
       chartId = ChartNext(chartId);
    }
-   
+
    FileClose(handle);
    Print("所有图表模板保存完成");
 }
@@ -138,22 +141,22 @@ void SaveAllChartTemplates()
 void CloseOtherCharts()
 {
    Print("开始关闭其他图表...");
-   
+
    long chartId = ChartFirst();
-   while(chartId != -1)
+   while (chartId != -1)
    {
       long nextChart = ChartNext(chartId); // 先获取下一个图表ID
-      
+
       // 跳过当前图表
-      if(chartId != ChartID())
+      if (chartId != ChartID())
       {
          Print("关闭图表: ", chartId);
          ChartClose(chartId);
       }
-      
+
       chartId = nextChart;
    }
-   
+
    Print("其他图表关闭完成");
 }
 
@@ -164,30 +167,30 @@ void CloseAllTrades()
 {
    Print("开始平仓所有交易...");
    int closedCount = 0;
-   
-   for(int i = OrdersTotal() - 1; i >= 0; i--)
+
+   for (int i = OrdersTotal() - 1; i >= 0; i--)
    {
-      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
       {
-         if(OrderType() == OP_BUY)
+         if (OrderType() == OP_BUY)
          {
-            if(OrderClose(OrderTicket(), OrderLots(), Bid, 3, Red))
+            if (OrderClose(OrderTicket(), OrderLots(), Bid, 3, Red))
                closedCount++;
          }
-         else if(OrderType() == OP_SELL)
+         else if (OrderType() == OP_SELL)
          {
-            if(OrderClose(OrderTicket(), OrderLots(), Ask, 3, Red))
+            if (OrderClose(OrderTicket(), OrderLots(), Ask, 3, Red))
                closedCount++;
          }
          else
          {
             // 挂单直接删除
-            if(OrderDelete(OrderTicket()))
+            if (OrderDelete(OrderTicket()))
                closedCount++;
          }
       }
    }
-   
+
    Print("平仓完成，共处理 ", closedCount, " 个订单");
 }
 
@@ -197,48 +200,99 @@ void CloseAllTrades()
 void ExecuteRecovery()
 {
    Print("开始执行恢复操作...");
-   
+
    // 从模板列表文件恢复图表
    RestoreChartsFromTemplates();
-   
+
    isStoppedOut = false;
    Print("恢复操作完成");
+}
+
+void RestoreChartsFromTemplates()
+{
+   string savedTemplates[];
+   StringSplit(templates, ',', savedTemplates);
+   for (int i = 0; i < ArraySize(savedTemplates); i++)
+   {
+      string templateName = savedTemplates[i];
+      long chartId = chartIdOf(templateName);
+      if (chartId != -1)
+      {
+         if (!ChartApplyTemplate(chartId, templateName))
+         {
+            Print("应用模板失败");
+         }
+         continue;
+      }
+      long newChartId = ChartOpen(Symbol(), PERIOD_M5);
+      if (newChartId == 0)
+      {
+         Print("创建图表失败");
+         continue;
+      }
+      if (!ChartApplyTemplate(newChartId, templateName))
+      {
+         int error = GetLastError();
+         Print("应用模板失败 - 错误: ", error);
+      }
+   }
+}
+
+long chartIdOf(string chartName)
+{
+   long currentChartId = ChartID();
+   long chartId = ChartFirst();
+   while (chartId != -1)
+   {
+      if (chartId == currentChartId)
+      {
+         chartId = ChartNext(chartId);
+         continue;
+      }
+      string savedChartName = ChartGetString(chartId, CHART_COMMENT);
+      if (chartName == savedChartName)
+      {
+         return chartId;
+      }
+      chartId = ChartNext(chartId);
+   }
+   return -1;
 }
 
 //+------------------------------------------------------------------+
 //| 从模板恢复图表                                                   |
 //+------------------------------------------------------------------+
-void RestoreChartsFromTemplates()
+void RestoreChartsFromTemplatesFile()
 {
    Print("开始从模板恢复图表...");
-   
-   int handle = FileOpen(templateListFile, FILE_READ|FILE_TXT);
-   if(handle == INVALID_HANDLE)
+
+   int handle = FileOpen(templateListFile, FILE_READ | FILE_TXT);
+   if (handle == INVALID_HANDLE)
    {
       Print("模板列表文件不存在!");
       return;
    }
-   
-   while(!FileIsEnding(handle))
+
+   while (!FileIsEnding(handle))
    {
       string templateName = FileReadString(handle);
       string parts[];
       StringSplit(templateName, '-', parts);
-      
-      if(ArraySize(parts) == 3)
+
+      if (ArraySize(parts) == 3)
       {
          string symbol = parts[0];
          int timeframe = (int)StringToInteger(parts[1]);
-         
+
          // 检查是否已经存在该品种的图表
          bool chartExists = false;
          long chartId = ChartFirst();
-         while(chartId != -1)
+         while (chartId != -1)
          {
-            if(ChartSymbol(chartId) == symbol && ChartPeriod(chartId) == timeframe)
+            if (ChartSymbol(chartId) == symbol && ChartPeriod(chartId) == timeframe)
             {
                // 应用模板到现有图表
-               if(ChartApplyTemplate(chartId, templateName))
+               if (ChartApplyTemplate(chartId, templateName))
                {
                   Print("应用模板到现有图表: ", templateName);
                }
@@ -251,14 +305,14 @@ void RestoreChartsFromTemplates()
             }
             chartId = ChartNext(chartId);
          }
-         
+
          // 如果没有现有图表，创建新图表并应用模板
-         if(!chartExists)
+         if (!chartExists)
          {
             long newChartId = ChartOpen(symbol, timeframe);
-            if(newChartId != -1)
+            if (newChartId != -1)
             {
-               if(ChartApplyTemplate(newChartId, templateName))
+               if (ChartApplyTemplate(newChartId, templateName))
                {
                   Print("创建新图表并应用模板: ", templateName);
                }
@@ -274,7 +328,7 @@ void RestoreChartsFromTemplates()
          }
       }
    }
-   
+
    FileClose(handle);
    Print("图表恢复完成");
 }

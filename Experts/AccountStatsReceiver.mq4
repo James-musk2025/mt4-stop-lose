@@ -54,3 +54,39 @@ void OnTimer()
    CheckStopLoss();
    CheckRecovery();
 }
+
+//+------------------------------------------------------------------+
+//| 处理图表事件（用于调试命令）                                     |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   // 处理键盘事件
+   if (id == CHARTEVENT_KEYDOWN)
+   {
+      // 按F1键显示风险管理状态
+      if (lparam == 112) // F1键
+      {
+      }
+      // 按F2键强制更新初始余额
+      else if (lparam == 113) // F2键
+      {
+         initialBalance = AccountBalance();
+         Print("强制更新初始余额: $", initialBalance);
+         Comment("初始余额已更新: $", initialBalance);
+      }
+      // 按F3键手动恢复图表模板（调试用）
+      else if (lparam == 114) // F3键
+      {
+         Print("手动触发图表恢复...");
+         RestoreChartsFromTemplates();
+         Comment("图表恢复操作已执行");
+      }
+      // 按F4键保存当前图表模板（调试用）
+      else if (lparam == 115) // F4键
+      {
+         Print("手动保存图表模板...");
+         SaveAllChartTemplates();
+         Comment("图表模板保存完成");
+      }
+   }
+}
