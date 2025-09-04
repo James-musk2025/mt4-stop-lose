@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 //| 在图表上显示统计信息                                             |
 //+------------------------------------------------------------------+
-void DisplayAccountStats(int corner = 0, int x = 10, int y = 20)
+void DisplayAccountStats(int corner = 0, int x = 10, int y = 20, int textColor = Red)
 {
    // 获取统计信息（如果是接收端，需要从其他地方获取数据）
    // 这里只是显示框架，具体数据需要在调用处提供
@@ -19,7 +19,7 @@ void DisplayAccountStats(int corner = 0, int x = 10, int y = 20)
    
    // 创建文本对象
    ObjectCreate(objName, OBJ_LABEL, 0, 0, 0);
-   ObjectSetText(objName, statsText, 10, "Arial", Red);
+   ObjectSetText(objName, statsText, 10, "Arial", textColor);
    ObjectSet(objName, OBJPROP_CORNER, corner);
    ObjectSet(objName, OBJPROP_XDISTANCE, x);
    ObjectSet(objName, OBJPROP_YDISTANCE, y);
@@ -32,7 +32,7 @@ void DisplayAccountStats(int corner = 0, int x = 10, int y = 20)
 //| 更新统计信息显示                                                 |
 //+------------------------------------------------------------------+
 void UpdateStatsDisplay(double floatingLoss, double equity, double maxDrawdownParam,
-                       double recoveryRatio, string updateTime, int corner = 0, int x = 10, int y = 20)
+                       double recoveryRatio, string updateTime, int corner = 0, int x = 10, int y = 20, int textColor = Red)
 {
    // 创建5个单独的文本对象，每行一个
    string objNames[5];
@@ -56,7 +56,7 @@ void UpdateStatsDisplay(double floatingLoss, double equity, double maxDrawdownPa
       
       // 创建新对象
       ObjectCreate(objNames[i], OBJ_LABEL, 0, 0, 0);
-      ObjectSetText(objNames[i], texts[i], 10, "Arial", Red);
+      ObjectSetText(objNames[i], texts[i], 10, "Arial", textColor);
       ObjectSet(objNames[i], OBJPROP_CORNER, corner);
       ObjectSet(objNames[i], OBJPROP_XDISTANCE, x);
       ObjectSet(objNames[i], OBJPROP_YDISTANCE, y + (i * 20)); // 每行间隔20像素

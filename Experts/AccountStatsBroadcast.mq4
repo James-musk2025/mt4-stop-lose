@@ -156,7 +156,7 @@ void OnTimer()
    double recoveryRatio = CalculateRecoveryRatio();
    string updateTime = TimeToStr(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
    
-   UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, 1, 10, 20);
+   UpdateStatsDisplay(floatingLoss, equity, maxDrawdown, recoveryRatio, updateTime, 1, 10, 20, Green);
    
    lastUpdateTime = TimeCurrent();
 }
