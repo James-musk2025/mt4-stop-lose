@@ -278,24 +278,6 @@ long FindChartByTemplateComment(string templateName)
 }
 
 //+------------------------------------------------------------------+
-//| 检查图表是否已存在且包含特定模板文件名                          |
-//+------------------------------------------------------------------+
-bool ChartExistsWithTemplate(string templateFilename)
-{
-   long chartId = ChartFirst();
-   while (chartId != -1)
-   {
-      string comment = ChartGetString(chartId, CHART_COMMENT);
-      if (StringFind(comment, templateFilename) != -1)
-      {
-         return true;
-      }
-      chartId = ChartNext(chartId);
-   }
-   return false;
-}
-
-//+------------------------------------------------------------------+
 //| 从模板恢复图表                                                   |
 //+------------------------------------------------------------------+
 void RestoreChartsFromTemplatesFile()
