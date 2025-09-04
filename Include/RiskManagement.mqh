@@ -5,7 +5,7 @@
 #include <RecoveryCheck.mqh>
 
 // 使用input参数（在EA中定义）
-input double StopLossAmount = 1000.0;                                                            // 止损金额
+input double StopLossAmount = 1000.0;                       // 止损金额
 input string templates = "XAUUSD-90784-Pendding-Order.tpl"; // 要恢复的EA模板，逗分隔
 
 // 全局变量
@@ -212,25 +212,35 @@ void RestoreChartsFromTemplates()
 {
    string savedTemplates[];
    StringSplit(templates, ',', savedTemplates);
+
    for (int i = 0; i < ArraySize(savedTemplates); i++)
    {
       string templateName = savedTemplates[i];
-      long chartId = chartIdOf(templateName);
+
+      // 查找是否有图表已经使用了这个模板
+      long chartId = FindChartByTemplateComment(templateName);
+
       if (chartId != -1)
       {
-         if (!ChartApplyTemplate(chartId, templateName))
-         {
-            Print("应用模板失败");
-         }
-         continue;
+         Print("图表已存在，跳过创建: ", templateName, " chartId: ", chartId);
+         continue; // 关键：找到后立即跳过，不执行后面的创建代码
       }
+
+      // 创建新图表
       long newChartId = ChartOpen(Symbol(), PERIOD_M5);
       if (newChartId == 0)
       {
          Print("创建图表失败");
          continue;
       }
-      if (!ChartApplyTemplate(newChartId, templateName))
+
+      if (ChartApplyTemplate(newChartId, templateName))
+      {
+         // 设置图表注释来标记使用的模板
+         ChartSetString(newChartId, CHART_COMMENT, "Template:" + templateName);
+         Print("模板应用成功，已设置注释: Template:", templateName);
+      }
+      else
       {
          int error = GetLastError();
          Print("应用模板失败 - 错误: ", error);
@@ -238,10 +248,13 @@ void RestoreChartsFromTemplates()
    }
 }
 
-long chartIdOf(string chartName)
+// 通过图表注释查找使用特定模板的图表
+long FindChartByTemplateComment(string templateName)
 {
    long currentChartId = ChartID();
    long chartId = ChartFirst();
+   string searchPattern = "Template:" + templateName;
+
    while (chartId != -1)
    {
       if (chartId == currentChartId)
@@ -249,14 +262,37 @@ long chartIdOf(string chartName)
          chartId = ChartNext(chartId);
          continue;
       }
-      string savedChartName = ChartGetString(chartId, CHART_COMMENT);
-      if (chartName == savedChartName)
+
+      // 获取图表注释
+      string comment = ChartGetString(chartId, CHART_COMMENT);
+      Print("检查图表 ", chartId, " 注释: '", comment, "'");
+
+      if (StringFind(comment, searchPattern) != -1)
       {
          return chartId;
       }
+
       chartId = ChartNext(chartId);
    }
    return -1;
+}
+
+//+------------------------------------------------------------------+
+//| 检查图表是否已存在且包含特定模板文件名                          |
+//+------------------------------------------------------------------+
+bool ChartExistsWithTemplate(string templateFilename)
+{
+   long chartId = ChartFirst();
+   while (chartId != -1)
+   {
+      string comment = ChartGetString(chartId, CHART_COMMENT);
+      if (StringFind(comment, templateFilename) != -1)
+      {
+         return true;
+      }
+      chartId = ChartNext(chartId);
+   }
+   return false;
 }
 
 //+------------------------------------------------------------------+
