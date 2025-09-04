@@ -5,9 +5,9 @@
 #property version   "1.00"
 
 // 恢复检查配置参数
-input int SignalAccountNumber = 90784; // 喊单账户号
+input int SignalAccountNumber = 2100892675; // 喊单账户号
 input bool UseSignalAccountStats = true;   // 是否使用喊单账户统计信息
-input double RecoveryRatioThreshold = 0.8; // 恢复比例阈值
+input double RecoveryRatioThreshold = 0.2; // 恢复比例阈值
 input bool UseMovingAverageCheck = false;  // 是否使用均线检查
 input int MAPeriod = 20;                   // 均线周期
 
@@ -74,7 +74,7 @@ AccountStats ReadSignalAccountStats(int accountNumber)
          }
       }
       stats.isValid = true;
-      Print("成功读取喊单账户统计信息");
+      // Print("成功读取喊单账户统计信息");
    }
    else
    {
