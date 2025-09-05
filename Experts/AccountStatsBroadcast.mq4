@@ -34,6 +34,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   ClearStatsDisplay(); // 清理显示对象
 }
 
 //+------------------------------------------------------------------+

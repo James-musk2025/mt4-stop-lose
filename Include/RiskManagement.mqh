@@ -7,7 +7,7 @@
 
 // 使用input参数（在EA中定义）
 input double StopLossAmount = 1000.0;                       // 止损金额
-input string templates = "XAUUSD-90784-Pendding-Order.tpl"; // 要恢复的EA模板，逗分隔
+input string templates = ""; // 要恢复的EA模板，逗分隔
 
 // 全局变量
 double initialBalance = 0.0;                   // 初始余额
