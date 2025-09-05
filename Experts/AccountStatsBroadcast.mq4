@@ -7,8 +7,8 @@
 #include <AccountStatsDisplay.mqh>
 
 // 添加两个输入参数
-input bool SaveTickData = true;   // 是否保存Tick级别数据
-input bool SaveMinuteData = true; // 是否保存分钟级别数据
+input bool SaveTickData = false;   // 是否保存Tick级别数据
+input bool SaveMinuteData = false; // 是否保存分钟级别数据
 
 // 全局变量
 double maxDrawdown = 0.0;      // 最大回撤纪录
@@ -179,8 +179,8 @@ void SaveTickDataToCSV()
          FileWrite(handle, GetTimestampWithMilliseconds(),
                    AccountEquity(),
                    AccountBalance(),
-                   AccountProfit(),
-                   maxDrawdown,
+                   DoubleToString(AccountProfit(), 2),
+                   DoubleToString(maxDrawdown, 2),
                    DoubleToString(CalculateRecoveryRatio(), 3),
                    OrdersTotal(),
                    symbols);
@@ -268,8 +268,8 @@ void SaveMinuteDataToCSV()
          FileWrite(handle, TimeToString(currentTime),
                    AccountEquity(),
                    AccountBalance(),
-                   AccountProfit(),
-                   maxDrawdown,
+                   DoubleToString(AccountProfit(), 2),
+                   DoubleToString(maxDrawdown, 2),
                    DoubleToString(CalculateRecoveryRatio(), 3),
                    OrdersTotal(),
                    symbols);
