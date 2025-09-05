@@ -18,7 +18,7 @@ int OnInit()
    // 初始化风险管理模块
    InitRiskManagement();
 
-   EventSetMillisecondTimer(300); // 每500毫秒检查一次
+   EventSetMillisecondTimer(350); // 每350毫秒检查一次
    return (INIT_SUCCEEDED);
 }
 
