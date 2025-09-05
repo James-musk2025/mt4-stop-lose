@@ -149,8 +149,6 @@ void CloseOtherCharts()
    {
       long nextChart = ChartNext(chartId); // 先获取下一个图表ID
 
-      // 查找是否有图表已经使用了这个模板
-      long chartId = FindChartByTemplateComment(templateName);
       // 跳过当前图表
       if (chartId != ChartID())
       {
