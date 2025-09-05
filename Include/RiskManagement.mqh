@@ -168,36 +168,36 @@ void CloseOtherCharts()
 void CloseAllTrades(int maxAttempts = -1)
 {
    // 如果指定了最大尝试次数，则更新
-   if(maxAttempts != -1)
+   if (maxAttempts != -1)
    {
       maxCloseAttempts = maxAttempts;
       Print("设置最大平仓尝试次数为: ", maxCloseAttempts);
    }
-   
+
    closeAttempts++;
    Print("开始平仓所有交易... 尝试次数: ", closeAttempts, "/", maxCloseAttempts);
-   
+
    int closedCount = 0;
    int remainingOrders = OrdersTotal();
 
-   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   for (int i = OrdersTotal() - 1; i >= 0; i--)
    {
-      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
       {
-         if(OrderType() == OP_BUY)
+         if (OrderType() == OP_BUY)
          {
-            if(OrderClose(OrderTicket(), OrderLots(), Bid, 3, Red))
+            if (OrderClose(OrderTicket(), OrderLots(), Bid, 3, Red))
                closedCount++;
          }
-         else if(OrderType() == OP_SELL)
+         else if (OrderType() == OP_SELL)
          {
-            if(OrderClose(OrderTicket(), OrderLots(), Ask, 3, Red))
+            if (OrderClose(OrderTicket(), OrderLots(), Ask, 3, Red))
                closedCount++;
          }
          else
          {
             // 挂单直接删除
-            if(OrderDelete(OrderTicket()))
+            if (OrderDelete(OrderTicket()))
                closedCount++;
          }
       }
@@ -206,12 +206,12 @@ void CloseAllTrades(int maxAttempts = -1)
    Print("平仓完成，共处理 ", closedCount, " 个订单，剩余订单: ", OrdersTotal());
 
    // 检查是否还有剩余订单
-   if(OrdersTotal() > 0)
+   if (OrdersTotal() > 0)
    {
-      if(closeAttempts < maxCloseAttempts)
+      if (closeAttempts < maxCloseAttempts)
       {
          Print("还有未平仓订单，等待1秒后重试...");
-         Sleep(1000); // 等待1秒
+         Sleep(1000);        // 等待1秒
          CloseAllTrades(-1); // 递归调用，保持当前最大尝试次数
       }
       else
@@ -221,10 +221,10 @@ void CloseAllTrades(int maxAttempts = -1)
          warning += "尝试次数: " + IntegerToString(closeAttempts) + "/" + IntegerToString(maxCloseAttempts) + "\n";
          warning += "剩余订单: " + IntegerToString(OrdersTotal()) + "\n";
          warning += "请手动检查并处理剩余订单。";
-         
+
          Alert(warning);
          MessageBox(warning, "平仓警告", MB_ICONWARNING | MB_OK);
-         
+
          // 重置计数器
          closeAttempts = 0;
       }
