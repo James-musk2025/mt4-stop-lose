@@ -20,6 +20,9 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   //启动跟单EA
+   RestoreChartsFromTemplates();
+
    Print("账户统计接收端启动，监控账户: ", SignalAccountNumber);
 
    // 初始化风险管理模块
