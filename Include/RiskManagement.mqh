@@ -80,7 +80,7 @@ void ExecuteStopLoss()
    Print("开始执行止损操作...");
 
    // 1. 保存所有其他图表模板
-   SaveAllChartTemplates();
+   // SaveAllChartTemplates();
 
    // 2. 关闭其他图表
    CloseOtherCharts();
@@ -223,7 +223,7 @@ void CloseAllTrades(int maxAttempts = -1)
          warning += "请手动检查并处理剩余订单。";
 
          Alert(warning);
-         MessageBox(warning, "平仓警告", MB_ICONWARNING | MB_OK);
+         // MessageBox(warning, "平仓警告", MB_ICONWARNING | MB_OK);
 
          // 重置计数器
          closeAttempts = 0;
@@ -399,4 +399,38 @@ void RestoreChartsFromTemplatesFile()
 
    FileClose(handle);
    Print("图表恢复完成");
+}
+
+//+------------------------------------------------------------------+
+//| 检查交易权限（通用函数）                                         |
+//+------------------------------------------------------------------+
+bool CheckTradingPermissions(string eaName = "")
+{
+   string warningMessage = "";
+   string title = (eaName != "") ? eaName + " - 权限警告" : "交易权限警告";
+
+   if (!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED))
+   {
+      warningMessage = "自动交易未启用!\n\n请确保：\n• 工具->选项->EA交易->允许自动交易\n• 图表右上角启用自动交易按钮";
+   }
+   else if (!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED))
+   {
+      warningMessage = "账户交易权限受限!\n\n可能原因：\n• 账户被禁止交易\n• 账户类型不支持交易\n• 账户状态异常";
+   }
+   else if (!MQLInfoInteger(MQL_TRADE_ALLOWED))
+   {
+      warningMessage = "EA交易功能被禁用!\n\n解决方法：\n• 在EA属性中启用交易权限\n• 检查EA的初始化参数";
+   }
+   else if (!TerminalInfoInteger(TERMINAL_CONNECTED))
+   {
+      warningMessage = "终端未连接到交易服务器!\n\n请检查：\n• 网络连接状态\n• 交易服务器状态";
+   }
+
+   if (warningMessage != "")
+   {
+      MessageBox(warningMessage, title, MB_ICONWARNING | MB_OK);
+      return false;
+   }
+
+   return true;
 }

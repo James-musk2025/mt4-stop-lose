@@ -13,6 +13,13 @@
 //+------------------------------------------------------------------+
 int OnInit()
 {
+   // 检查交易权限
+   if (!CheckTradingPermissions())
+   {
+      Print("交易权限检查失败，EA无法执行交易操作");
+      return INIT_FAILED;
+   }
+
    Print("账户统计接收端启动，监控账户: ", SignalAccountNumber);
 
    // 初始化风险管理模块
