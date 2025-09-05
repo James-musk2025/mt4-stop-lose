@@ -15,6 +15,7 @@ double maxDrawdown = 0.0;          // 最大回撤纪录
 double lastProfitEquity = 0.0;     // 上次盈利时的净值
 datetime lastUpdateTime = 0;       // 最后更新时间
 datetime lastMinuteSave = 0;       // 最后分钟数据保存时间
+datetime lastSecondSave = 0;       // 最后秒级数据保存时间
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -150,36 +151,47 @@ void WriteStatsToFile()
 void SaveTickDataToCSV()
 {
    if(!SaveTickData) return;
-   
-   string filename = "AccountStats_Tick_" + IntegerToString(AccountNumber()) + ".csv";
-   int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON);
-   
-   if(handle != INVALID_HANDLE)
+   if (OrdersTotal() == 0) return;
+
+   datetime currentTime = TimeCurrent();
+
+   if(currentTime - lastSecondSave >= 1 || lastSecondSave == 0)
    {
-      FileSeek(handle, 0, SEEK_END); // 移动到文件末尾
+
+      string filename = "AccountStats_Tick_" + IntegerToString(AccountNumber()) + ".csv";
+      int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON);
       
-      if(FileSize(handle) == 0)
+      if(handle != INVALID_HANDLE)
       {
-         FileWrite(handle, "Timestamp", "Equity", "Balance", "FloatingPL", 
-                  "Drawdown", "RecoveryRatio", "PositionCount");
+         FileSeek(handle, 0, SEEK_END); // 移动到文件末尾
+         
+         if(FileSize(handle) == 0)
+         {
+            FileWrite(handle, "Timestamp", "Equity", "Balance", "FloatingPL", 
+                     "Drawdown", "RecoveryRatio", "PositionCount", "Symbols");
+         }
+
+         string symbols = GetTradingSymbols();
+
+         // 构建精确格式的数据行
+         FileWrite(handle, GetTimestampWithMilliseconds(),
+                   AccountEquity(),
+                   AccountBalance(),
+                   AccountProfit(),
+                   maxDrawdown,
+                   DoubleToString(CalculateRecoveryRatio(), 3),
+                   OrdersTotal(),
+                   symbols);
+
+         FileClose(handle);
+         lastSecondSave = currentTime;
+
+         // Print("秒级数据已保存: ", TimeToString(currentTime), ", 持仓: ", OrdersTotal());
       }
-
-      // 构建精确格式的数据行
-      string dataLine = StringFormat("%s,%.2f,%.2f,%.2f,%.2f,%.3f,%d",
-                                     GetTimestampWithMilliseconds(),
-                                     AccountEquity(),
-                                     AccountBalance(),
-                                     AccountProfit(),
-                                     maxDrawdown,
-                                     CalculateRecoveryRatio(),
-                                     OrdersTotal());
-
-      FileWrite(handle, dataLine);
-      FileClose(handle);
-   }
-   else
-   {
-      Print("Error: Can't create file", GetLastError());
+      else
+      {
+         Print("Error: Can't create file", GetLastError());
+      }
    }
 }
 
@@ -187,9 +199,35 @@ void SaveTickDataToCSV()
 string GetTimestampWithMilliseconds()
 {
     datetime currentTime = TimeCurrent();
-    double milliseconds = GetTickCount() % 1000; // 获取毫秒数
+    
+    // 使用高精度时间函数
+    ulong microseconds = GetMicrosecondCount();
+    ulong milliseconds = (microseconds / 1000) % 1000;
     
     return StringFormat("%s.%03d", TimeToString(currentTime, TIME_DATE|TIME_MINUTES|TIME_SECONDS), milliseconds);
+}
+
+// 获取当前交易的品种列表（简单去重版本）
+string GetTradingSymbols()
+{
+   string symbolList = "";
+   
+   for(int i = 0; i < OrdersTotal(); i++)
+   {
+      if(OrderSelect(i, SELECT_BY_POS, MODE_TRADES))
+      {
+         string currentSymbol = OrderSymbol();
+         
+         // 如果列表中还没有该品种，则添加
+         if(StringFind(symbolList, currentSymbol) == -1)
+         {
+            if(symbolList != "") symbolList += "-";
+            symbolList += currentSymbol;
+         }
+      }
+   }
+   
+   return symbolList;
 }
 
 //+------------------------------------------------------------------+
@@ -198,6 +236,12 @@ string GetTimestampWithMilliseconds()
 void SaveMinuteDataToCSV()
 {
    if(!SaveMinuteData) return;
+
+   // 检查是否有持仓
+   if(OrdersTotal() == 0) 
+   {
+      return;
+   }
    
    datetime currentTime = TimeCurrent();
    if(currentTime - lastMinuteSave >= 60 || lastMinuteSave == 0)
@@ -212,22 +256,23 @@ void SaveMinuteDataToCSV()
          if(FileSize(handle) == 0)
          {
             FileWrite(handle, "Timestamp", "Equity", "Balance", "FloatingPL", 
-                     "Drawdown", "RecoveryRatio", "PositionCount");
+                     "Drawdown", "RecoveryRatio", "PositionCount", "Symbols");
          }
          
-          // 构建精确格式的数据行
-         string dataLine = StringFormat("%s,%.2f,%.2f,%.2f,%.2f,%.3f,%d",
-                                        GetTimestampWithMilliseconds(),
-                                        AccountEquity(),
-                                        AccountBalance(),
-                                        AccountProfit(),
-                                        maxDrawdown,
-                                        CalculateRecoveryRatio(),
-                                        OrdersTotal());
+         string symbols = GetTradingSymbols();
 
-         FileWrite(handle, dataLine);
+         FileWrite(handle, TimeToString(currentTime),
+                   AccountEquity(),
+                   AccountBalance(),
+                   AccountProfit(),
+                   maxDrawdown,
+                   DoubleToString(CalculateRecoveryRatio(), 3),
+                   OrdersTotal(),
+                   symbols);
          FileClose(handle);
          lastMinuteSave = currentTime;
+
+         Print("分钟级数据已保存: ", TimeToString(currentTime), ", 持仓: ", OrdersTotal());
       }
    }
 }
