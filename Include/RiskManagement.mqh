@@ -12,8 +12,8 @@ input string templates = "XAUUSD-90784-Pendding-Order.tpl"; // 要恢复的EA模
 double initialBalance = 0.0;                   // 初始余额
 bool isStoppedOut = false;                     // 是否已止损
 string templateListFile = "template_list.txt"; // 模板列表文件
-// 全局变量用于跟踪递归次数
-int closeAttempts = 0;
+int closeAttempts = 0;                         // 全局变量用于跟踪递归次数
+int maxCloseAttempts = 3;                      // 最大递归次数
 
 //+------------------------------------------------------------------+
 //| 初始化风险管理模块                                               |
@@ -165,13 +165,20 @@ void CloseOtherCharts()
 //+------------------------------------------------------------------+
 //| 平仓所有交易                                                     |
 //+------------------------------------------------------------------+
-
-void CloseAllTrades()
+void CloseAllTrades(int maxAttempts = -1)
 {
+   // 如果指定了最大尝试次数，则更新
+   if(maxAttempts != -1)
+   {
+      maxCloseAttempts = maxAttempts;
+      Print("设置最大平仓尝试次数为: ", maxCloseAttempts);
+   }
+   
    closeAttempts++;
-   Print("开始平仓所有交易... 尝试次数: ", closeAttempts);
+   Print("开始平仓所有交易... 尝试次数: ", closeAttempts, "/", maxCloseAttempts);
    
    int closedCount = 0;
+   int remainingOrders = OrdersTotal();
 
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
@@ -201,22 +208,25 @@ void CloseAllTrades()
    // 检查是否还有剩余订单
    if(OrdersTotal() > 0)
    {
-      if(closeAttempts < 3)
+      if(closeAttempts < maxCloseAttempts)
       {
          Print("还有未平仓订单，等待1秒后重试...");
          Sleep(1000); // 等待1秒
-         CloseAllTrades(); // 递归调用
+         CloseAllTrades(-1); // 递归调用，保持当前最大尝试次数
       }
       else
       {
-         // 超过3次尝试，弹窗警告
+         // 超过最大尝试次数，弹窗警告
          string warning = "警告: 无法完全平仓所有订单!\n";
-         warning += "尝试次数: " + IntegerToString(closeAttempts) + "\n";
+         warning += "尝试次数: " + IntegerToString(closeAttempts) + "/" + IntegerToString(maxCloseAttempts) + "\n";
          warning += "剩余订单: " + IntegerToString(OrdersTotal()) + "\n";
          warning += "请手动检查并处理剩余订单。";
          
          Alert(warning);
          MessageBox(warning, "平仓警告", MB_ICONWARNING | MB_OK);
+         
+         // 重置计数器
+         closeAttempts = 0;
       }
    }
    else
@@ -226,13 +236,12 @@ void CloseAllTrades()
    }
 }
 
-// 如果需要从外部调用，可以添加一个包装函数
-void CloseAllTradesWithRetry()
+// 包装函数，可以指定最大尝试次数
+void CloseAllTradesWithRetry(int maxAttempts = 3)
 {
    closeAttempts = 0; // 重置计数器
-   CloseAllTrades();
+   CloseAllTrades(maxAttempts);
 }
-
 
 //+------------------------------------------------------------------+
 //| 执行恢复操作                                                     |
