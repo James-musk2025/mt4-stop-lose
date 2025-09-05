@@ -46,6 +46,13 @@ void CheckAndReadStats()
    UpdateStatsDisplay(accountStats.floatingLoss, accountStats.equity,
                       accountStats.maxDrawdown, accountStats.recoveryRatio,
                       accountStats.updateTime, CORNER_RIGHT_UPPER, 10, 20);
+   
+   // 显示风险管理信息（在统计信息下方）
+   double stopLossEquity = initialBalance - StopLossAmount;
+   UpdateRiskManagementDisplay(SignalAccountNumber, initialBalance,
+                              StopLossAmount, stopLossEquity,
+                              RecoveryRatioThreshold, templates,
+                              CORNER_RIGHT_UPPER, 10, 120);
 }
 
 //+------------------------------------------------------------------+
@@ -54,7 +61,8 @@ void CheckAndReadStats()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   ClearStatsDisplay(); // 清理显示对象
+   ClearStatsDisplay(); // 清理统计信息显示对象
+   ClearRiskManagementDisplay(); // 清理风险管理信息显示对象
 }
 
 //+------------------------------------------------------------------+
