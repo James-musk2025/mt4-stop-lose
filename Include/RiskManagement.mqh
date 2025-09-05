@@ -279,7 +279,8 @@ void RestoreChartsFromTemplates()
       long newChartId = ChartOpen(Symbol(), PERIOD_M5);
       if (newChartId == 0)
       {
-         Print("创建图表失败");
+         int error = GetLastError();
+         Print("创建图表失败 - 错误: ", error);
          continue;
       }
 

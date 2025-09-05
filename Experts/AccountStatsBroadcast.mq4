@@ -6,10 +6,15 @@
 
 #include <AccountStatsDisplay.mqh>
 
+// 添加两个输入参数
+input bool SaveTickData = true;    // 是否保存Tick级别数据
+input bool SaveMinuteData = true;  // 是否保存分钟级别数据
+
 // 全局变量
 double maxDrawdown = 0.0;          // 最大回撤纪录
 double lastProfitEquity = 0.0;     // 上次盈利时的净值
 datetime lastUpdateTime = 0;       // 最后更新时间
+datetime lastMinuteSave = 0;       // 最后分钟数据保存时间
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -140,6 +145,94 @@ void WriteStatsToFile()
 }
 
 //+------------------------------------------------------------------+
+//| 保存Tick级别数据到CSV                                            |
+//+------------------------------------------------------------------+
+void SaveTickDataToCSV()
+{
+   if(!SaveTickData) return;
+   
+   string filename = "AccountStats_Tick_" + IntegerToString(AccountNumber()) + ".csv";
+   int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON);
+   
+   if(handle != INVALID_HANDLE)
+   {
+      FileSeek(handle, 0, SEEK_END); // 移动到文件末尾
+      
+      if(FileSize(handle) == 0)
+      {
+         FileWrite(handle, "Timestamp", "Equity", "Balance", "FloatingPL", 
+                  "Drawdown", "RecoveryRatio", "PositionCount");
+      }
+
+      // 构建精确格式的数据行
+      string dataLine = StringFormat("%s,%.2f,%.2f,%.2f,%.2f,%.3f,%d",
+                                     GetTimestampWithMilliseconds(),
+                                     AccountEquity(),
+                                     AccountBalance(),
+                                     AccountProfit(),
+                                     maxDrawdown,
+                                     CalculateRecoveryRatio(),
+                                     OrdersTotal());
+
+      FileWrite(handle, dataLine);
+      FileClose(handle);
+   }
+   else
+   {
+      Print("Error: Can't create file", GetLastError());
+   }
+}
+
+// 获取带毫秒的完整时间戳
+string GetTimestampWithMilliseconds()
+{
+    datetime currentTime = TimeCurrent();
+    double milliseconds = GetTickCount() % 1000; // 获取毫秒数
+    
+    return StringFormat("%s.%03d", TimeToString(currentTime, TIME_DATE|TIME_MINUTES|TIME_SECONDS), milliseconds);
+}
+
+//+------------------------------------------------------------------+
+//| 保存分钟级别数据到CSV                                            |
+//+------------------------------------------------------------------+
+void SaveMinuteDataToCSV()
+{
+   if(!SaveMinuteData) return;
+   
+   datetime currentTime = TimeCurrent();
+   if(currentTime - lastMinuteSave >= 60 || lastMinuteSave == 0)
+   {
+      string filename = "AccountStats_Minute_" + IntegerToString(AccountNumber()) + ".csv";
+      int handle = FileOpen(filename, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON);
+      
+      if(handle != INVALID_HANDLE)
+      {
+         FileSeek(handle, 0, SEEK_END); // 移动到文件末尾
+
+         if(FileSize(handle) == 0)
+         {
+            FileWrite(handle, "Timestamp", "Equity", "Balance", "FloatingPL", 
+                     "Drawdown", "RecoveryRatio", "PositionCount");
+         }
+         
+          // 构建精确格式的数据行
+         string dataLine = StringFormat("%s,%.2f,%.2f,%.2f,%.2f,%.3f,%d",
+                                        GetTimestampWithMilliseconds(),
+                                        AccountEquity(),
+                                        AccountBalance(),
+                                        AccountProfit(),
+                                        maxDrawdown,
+                                        CalculateRecoveryRatio(),
+                                        OrdersTotal());
+
+         FileWrite(handle, dataLine);
+         FileClose(handle);
+         lastMinuteSave = currentTime;
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Timer function                                                   |
 //+------------------------------------------------------------------+
 void OnTimer()
@@ -149,6 +242,10 @@ void OnTimer()
    
    // 写入统计信息到文件
    WriteStatsToFile();
+
+   // 保存数据到CSV
+   SaveTickDataToCSV();
+   SaveMinuteDataToCSV();
    
    // 在图表上显示统计信息（左下角，坐标10,20）
    double floatingLoss = CalculateFloatingLoss();
