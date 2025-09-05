@@ -7,6 +7,7 @@
 #include <AccountStatsDisplay.mqh>
 #include <RiskManagement.mqh>
 #include <RecoveryCheck.mqh>
+#include <TemplateManager.mqh>
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -20,8 +21,11 @@ int OnInit()
       return INIT_FAILED;
    }
 
-   //启动跟单EA
-   RestoreChartsFromTemplates();
+   // 初始化模板管理模块
+   InitTemplateManager();
+   
+   //启动跟单EA - 只恢复参数指定的模板
+   RestoreTemplateCharts(templates);
 
    Print("账户统计接收端启动，监控账户: ", SignalAccountNumber);
 
@@ -88,15 +92,14 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       else if (lparam == 114) // F3键
       {
          Print("手动触发图表恢复...");
-         RestoreChartsFromTemplates();
+         RestoreTemplateCharts(templates);
          Comment("图表恢复操作已执行");
       }
       // 按F4键保存当前图表模板（调试用）
       else if (lparam == 115) // F4键
       {
-         Print("手动保存图表模板...");
-         SaveAllChartTemplates();
-         Comment("图表模板保存完成");
+         Print("手动保存图表模板功能已移除，使用新的模板管理机制");
+         Comment("请使用新的模板管理机制");
       }
    }
 }
