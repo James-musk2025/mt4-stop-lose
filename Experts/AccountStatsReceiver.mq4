@@ -32,7 +32,9 @@ int OnInit()
    // 初始化风险管理模块
    InitRiskManagement();
 
-   EventSetMillisecondTimer(350); // 每350毫秒检查一次
+   MathSrand(GetTickCount());
+
+   EventSetMillisecondTimer(GetRandom300to500()); // 每350毫秒检查一次
    return (INIT_SUCCEEDED);
 }
 
@@ -42,10 +44,14 @@ int OnInit()
 void CheckAndReadStats()
 {
    AccountStats accountStats = ReadSignalAccountStats(SignalAccountNumber);
-   // 在图表上显示统计信息（右上角，坐标10,20）
-   UpdateStatsDisplay(accountStats.floatingLoss, accountStats.equity,
-                      accountStats.maxDrawdown, accountStats.recoveryRatio,
-                      accountStats.updateTime, CORNER_RIGHT_UPPER, 10, 20);
+
+   if (accountStats.isValid)
+   {
+      // 在图表上显示统计信息（右上角，坐标10,20）
+      UpdateStatsDisplay(accountStats.floatingLoss, accountStats.equity,
+                         accountStats.maxDrawdown, accountStats.recoveryRatio,
+                         accountStats.updateTime, CORNER_RIGHT_UPPER, 10, 20);
+   }
 
    // 显示风险管理信息（在统计信息下方）
    double stopLossEquity = initialBalance - StopLossAmount;

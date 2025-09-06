@@ -24,7 +24,9 @@ int OnInit()
 {
    Print("账户统计广播端启动");
    lastProfitEquity = AccountEquity(); // 初始化时设置为当前净值
-   EventSetMillisecondTimer(300);      // 每500毫秒更新一次
+
+   EventSetMillisecondTimer(290); // 每290毫秒更新一次
+
    return (INIT_SUCCEEDED);
 }
 
