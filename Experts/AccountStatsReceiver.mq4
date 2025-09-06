@@ -34,7 +34,10 @@ int OnInit()
 
    MathSrand(GetTickCount());
 
-   EventSetMillisecondTimer(GetRandom300to500()); // 每350毫秒检查一次
+   int millSecond = GetRandom300to500();
+   Print("设置定时器间隔为: ", millSecond, " 毫秒");
+
+   EventSetMillisecondTimer(millSecond); // 每350毫秒检查一次
    return (INIT_SUCCEEDED);
 }
 
