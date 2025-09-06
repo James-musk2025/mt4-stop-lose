@@ -32,12 +32,7 @@ int OnInit()
    // 初始化风险管理模块
    InitRiskManagement();
 
-   MathSrand(GetTickCount());
-
-   int millSecond = GetRandom300to500();
-   Print("设置定时器间隔为: ", millSecond, " 毫秒");
-
-   EventSetMillisecondTimer(millSecond); // 每350毫秒检查一次
+   EventSetMillisecondTimer(350); // 每350毫秒检查一次
    return (INIT_SUCCEEDED);
 }
 

@@ -38,7 +38,7 @@ AccountStats ReadSignalAccountStats(int accountNumber)
       return stats;
    }
 
-   int handle = FileOpen(filename, FILE_READ | FILE_TXT | FILE_COMMON | FILE_SHARE_READ | FILE_SHARE_WRITE);
+   int handle = FileOpen(filename, FILE_READ | FILE_TXT | FILE_COMMON | FILE_SHARE_READ);
    if (handle == INVALID_HANDLE)
    {
       Print("打开统计文件失败: ", filename);
